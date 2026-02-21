@@ -15,19 +15,19 @@ export default function UserGuide() {
     },
     {
       title: "2. Connecting",
-      content: "Tap the 'Connect' button on the home screen to begin. This will take you to the connection interface where the app prepares the audio environment."
+      content: "Use the 'Connection' section on the home screen to scan and connect to your Linux system via Bluetooth. This enables real-time data transfer."
     },
     {
       title: "3. Downloading Models",
-      content: "Before transcribing, you need to download a model. Go to Settings (top-right icon) and select a model size. 'Tiny' is fastest, while 'Large' is most accurate. You can also choose between English-only and Multilingual models."
+      content: "Before transcribing, you need to download a model. Go to Settings (top-right icon) and select a model size. You can also adjust display brightness and font size here."
     },
     {
-      title: "4. Transcription",
-      content: "Once a model is downloaded and set as active, tap the microphone button in the transcription view to start speaking. You'll see your speech converted to text in real-time."
+      title: "4. Active Model",
+      content: "Once a model is downloaded, you can select it from the 'Active Model' list on the home screen. The selected model is highlighted and will be used for all transcriptions."
     },
     {
-      title: "5. Languages",
-      content: "In Settings, you can switch between English and Arabic. This affects both the transcription recognition and the Text-to-Speech playback."
+      title: "5. Transcription",
+      content: "Tap 'Show Transcript' on the home screen to enter the transcription view. Tap the microphone button to start speaking; your speech will be converted to text and sent to your connected device in real-time."
     }
   ];
 

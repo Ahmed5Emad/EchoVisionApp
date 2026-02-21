@@ -4,10 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useRouter } from "expo-router";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Slider from '@react-native-community/slider';
 
-import { BackIcon, DownloadIcon, CheckIcon, TrashIcon, PauseIcon, PlayIcon, CloseIcon } from '../components/Icons';
-import { useBluetooth } from '../context/BluetoothContext';
+import { BackIcon, DownloadIcon, CheckIcon, TrashIcon, PauseIcon, PlayIcon, CloseIcon, BrightnessIcon, FontIcon } from '../components/Icons';
 import { useDownload } from '../context/DownloadContext';
+import { useBluetooth } from "../context/BluetoothContext";
 
 // --- DATA STRUCTURES ---
 
@@ -52,9 +53,11 @@ const LANGUAGES = [
   { id: 'ar', name: 'Arabic' },
 ];
 
+type Mode = 'brightness' | 'font';
+
 export default function Settings() {
   const router = useRouter();
-  const { isScanning, devices, connectedDevice, error, scanDevices, connectToDevice, disconnect } = useBluetooth();
+  const { sendData } = useBluetooth();
   const { 
     downloadState, 
     downloadModel, 
@@ -67,12 +70,27 @@ export default function Settings() {
   
   // App Settings
   const [selectedLanguage, setSelectedLanguage] = useState('en');
-  const [activeModel, setActiveModel] = useState('tiny.en'); // The one currently used for transcription
+  const [activeModel, setActiveModel] = useState(''); 
   
   // Download Selection State
   const [selFamily, setSelFamily] = useState('tiny');
   const [selType, setSelType] = useState<'en' | 'multilingual'>('en');
   const [selQuant, setSelQuant] = useState('standard');
+
+  // Display Controls State
+  const [activeMode, setActiveMode] = useState<Mode>('brightness');
+  const [brightness, setBrightness] = useState(60);
+  const [fontSize, setFontSize] = useState(24);
+
+  const activeColor = "#2E66F5";
+  const inactiveColor = "#9D9D9D";
+
+  const isBrightness = activeMode === 'brightness';
+  const currentValue = isBrightness ? brightness : fontSize;
+  
+  const minVal = isBrightness ? 0 : 12;
+  const maxVal = isBrightness ? 100 : 40;
+
 
   useEffect(() => {
     loadSettings();
@@ -112,13 +130,6 @@ export default function Settings() {
 
   const isCurrentDownloaded = downloadedModels.includes(currentCombination);
 
-  const selectActiveModel = async () => {
-    if (!isCurrentDownloaded) return;
-    setActiveModel(currentCombination);
-    await AsyncStorage.setItem('model', currentCombination);
-    Alert.alert("Success", `Active model set to ${currentCombination}`);
-  };
-
   const handleDeleteModel = async (modelName: string) => {
     Alert.alert(
       "Delete Model",
@@ -146,6 +157,23 @@ export default function Settings() {
     );
   };
 
+  const handleSliderChange = (val: number) => {
+    if (isBrightness) {
+      setBrightness(val);
+    } else {
+      setFontSize(val);
+    }
+  };
+
+  const handleSlidingComplete = (val: number) => {
+    const roundedVal = Math.round(val);
+    if (isBrightness) {
+      sendData(`cmd:brightness:${roundedVal}`);
+    } else {
+      sendData(`cmd:font:${roundedVal}`);
+    }
+  };
+
   const availableQuants = QUANT_OPTIONS[selType === 'en' ? `${selFamily}.en` : selFamily] || ['standard'];
 
   const isDownloadingThis = downloadState.modelId === currentCombination;
@@ -165,46 +193,62 @@ export default function Settings() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Bluetooth Section */}
+
+        {/* --- Display Controls Section --- */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bluetooth Transfer</Text>
+          <Text style={styles.sectionTitle}>Display Controls</Text>
           <View style={styles.glassContainer}>
-            <BlurView intensity={40} tint="light" style={styles.blurContent}>
-              <View style={styles.statusBox}>
-                <Text style={styles.subLabel}>Status: {connectedDevice ? `Connected to ${connectedDevice.name}` : 'Not Connected'}</Text>
-                {error && <Text style={styles.errorText}>{error}</Text>}
+             <BlurView intensity={40} tint="light" style={styles.controlBlurContent}>
                 
-                <View style={styles.btActionContainer}>
-                  {connectedDevice ? (
-                    <Pressable onPress={disconnect} style={[styles.actionButton, { backgroundColor: '#FF4B4B' }]}>
-                      <Text style={styles.actionButtonText}>Disconnect</Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable onPress={scanDevices} style={styles.actionButton} disabled={isScanning}>
-                      {isScanning ? <ActivityIndicator color="#FFF" /> : <Text style={styles.actionButtonText}>Scan for Devices</Text>}
-                    </Pressable>
-                  )}
+                {/* Control Toggles */}
+                <View style={styles.controlsRow}>
+                  <Pressable 
+                    style={[styles.controlToggle, isBrightness && styles.activeControlToggle]} 
+                    onPress={() => setActiveMode('brightness')}
+                  >
+                     <BrightnessIcon 
+                       width={24} 
+                       height={24} 
+                       color={isBrightness ? activeColor : inactiveColor} 
+                     />
+                     <Text style={[styles.controlText, isBrightness ? styles.activeControlText : styles.inactiveControlText]}>Brightness</Text>
+                  </Pressable>
+
+                  <Pressable 
+                    style={[styles.controlToggle, !isBrightness && styles.activeControlToggle]} 
+                    onPress={() => setActiveMode('font')}
+                  >
+                     <FontIcon 
+                       width={24} 
+                       height={24} 
+                       color={!isBrightness ? activeColor : inactiveColor} 
+                     />
+                     <Text style={[styles.controlText, !isBrightness ? styles.activeControlText : styles.inactiveControlText]}>Font Size</Text>
+                  </Pressable>
                 </View>
 
-                {!connectedDevice && devices.length > 0 && (
-                  <View style={styles.deviceList}>
-                    <Text style={styles.subLabel}>Available Devices:</Text>
-                    {devices.map((device) => (
-                      <Pressable 
-                        key={device.id} 
-                        style={styles.deviceItem}
-                        onPress={() => connectToDevice(device)}
-                      >
-                        <Text style={styles.deviceText}>{device.name || 'Unknown'}</Text>
-                        <Text style={styles.deviceIdText}>{device.id}</Text>
-                      </Pressable>
-                    ))}
+                {/* Slider */}
+                <View style={styles.sliderContainer}>
+                  <View style={styles.sliderInfo}>
+                     <View style={styles.valueBadge}>
+                       <Text style={styles.valueText}>{Math.round(currentValue)}</Text>
+                     </View>
                   </View>
-                )}
-              </View>
-            </BlurView>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={minVal}
+                    maximumValue={maxVal}
+                    value={currentValue}
+                    onValueChange={handleSliderChange}
+                    onSlidingComplete={handleSlidingComplete}
+                    minimumTrackTintColor={activeColor}
+                    maximumTrackTintColor="rgba(0,0,0,0.1)"
+                    thumbTintColor="#FFFFFF"
+                  />
+                </View>
+
+             </BlurView>
           </View>
-          <Text style={styles.hintText}>Connect to your Linux system to stream transcriptions in real-time.</Text>
         </View>
 
         {/* Language Section */}
@@ -230,7 +274,7 @@ export default function Settings() {
 
         {/* Model Selection Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Model Configuration</Text>
+          <Text style={styles.sectionTitle}>Model Downloads</Text>
           
           <Text style={styles.subLabel}>Size</Text>
           <View style={styles.chipContainer}>
@@ -292,11 +336,6 @@ export default function Settings() {
                 <View style={styles.sizeBadge}>
                    <Text style={styles.sizeBadgeText}>Est. Size: {estSize >= 1000 ? (estSize/1000).toFixed(1) + ' GB' : estSize + ' MB'}</Text>
                 </View>
-                {activeModel === currentCombination && (
-                  <View style={styles.activeBadge}>
-                    <Text style={styles.activeBadgeText}>CURRENTLY ACTIVE</Text>
-                  </View>
-                )}
               </View>
 
               {isDownloadingThis || (downloadState.isPaused && downloadState.modelId === currentCombination) ? (
@@ -321,15 +360,10 @@ export default function Settings() {
                   </View>
                 </View>
               ) : isCurrentDownloaded ? (
-                <Pressable 
-                  onPress={selectActiveModel}
-                  style={[styles.actionButton, activeModel === currentCombination && styles.disabledButton]}
-                  disabled={activeModel === currentCombination}
-                >
-                  <Text style={styles.actionButtonText}>
-                    {activeModel === currentCombination ? 'Currently Active' : 'Set as Active'}
-                  </Text>
-                </Pressable>
+                <View style={styles.downloadedBadge}>
+                  <CheckIcon color="#2E66F5" width={20} height={20} />
+                  <Text style={styles.downloadedBadgeText}>Downloaded</Text>
+                </View>
               ) : (
                 <Pressable 
                   onPress={() => downloadModel(currentCombination)}
@@ -342,15 +376,11 @@ export default function Settings() {
               )}
             </BlurView>
           </View>
-
-          <Text style={styles.hintText}>
-            Higher sizes and "Standard" quantization offer better accuracy but require more RAM and storage. Quantized models (Q5, Q8) are faster and smaller.
-          </Text>
         </View>
 
         {/* List of Downloaded Models */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Downloaded Models</Text>
+          <Text style={styles.sectionTitle}>Manage Downloads</Text>
           <View style={styles.glassContainer}>
             <BlurView intensity={40} tint="light" style={styles.blurContent}>
               {downloadedModels.length === 0 ? (
@@ -461,6 +491,64 @@ const styles = StyleSheet.create({
   blurContent: {
     paddingVertical: 5,
   },
+  controlBlurContent: {
+    padding: 20,
+    gap: 20,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    gap: 15,
+  },
+  controlToggle: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  activeControlToggle: {
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderColor: '#2E66F5',
+  },
+  controlText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  activeControlText: {
+    color: '#2E66F5',
+  },
+  inactiveControlText: {
+    color: '#666',
+  },
+  sliderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+  },
+  sliderInfo: {
+    width: 40,
+    alignItems: 'center',
+  },
+  valueBadge: {
+    backgroundColor: "rgba(255,255,255,0.5)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  valueText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: "#424242"
+  },
+  slider: {
+    flex: 1,
+    height: 40,
+  },
   statusBox: {
     padding: 20,
     flexDirection: 'column',
@@ -492,36 +580,6 @@ const styles = StyleSheet.create({
     color: "#666",
     fontWeight: "600",
   },
-  activeBadge: {
-    marginTop: 8,
-    backgroundColor: "rgba(46, 102, 245, 0.1)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(46, 102, 245, 0.3)",
-  },
-  activeBadgeText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#2E66F5",
-  },
-  actionButton: {
-    backgroundColor: "#2E66F5",
-    paddingHorizontal: 25,
-    paddingVertical: 12,
-    borderRadius: 12,
-    width: '100%',
-    alignItems: 'center',
-  },
-  disabledButton: {
-    backgroundColor: "#AAA",
-  },
-  actionButtonText: {
-    color: "#FFF",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
   downloadAction: {
     backgroundColor: "#2E66F5",
     flexDirection: 'row',
@@ -532,6 +590,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: '100%',
     gap: 10,
+  },
+  disabledButton: {
+    backgroundColor: "#AAA",
+  },
+  actionButtonText: {
+    color: "#FFF",
+    fontWeight: "bold",
+    fontSize: 16,
   },
   downloadActionText: {
     color: "#FFF",
@@ -563,6 +629,22 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  downloadedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(46, 102, 245, 0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(46, 102, 245, 0.3)',
+  },
+  downloadedBadgeText: {
+    color: '#2E66F5',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   optionItem: {
     flexDirection: 'row',
@@ -596,43 +678,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: "#999",
     fontStyle: 'italic',
-  },
-  hintText: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 15,
-    paddingHorizontal: 10,
-    lineHeight: 18,
-    fontStyle: 'italic',
-  },
-  errorText: {
-    color: '#FF4B4B',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  btActionContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  deviceList: {
-    width: '100%',
-    marginTop: 10,
-    gap: 10,
-  },
-  deviceItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
-  },
-  deviceText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#424242',
-  },
-  deviceIdText: {
-    fontSize: 10,
-    color: '#666',
   }
 });
