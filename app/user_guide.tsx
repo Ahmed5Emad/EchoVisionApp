@@ -1,7 +1,5 @@
 import React from "react";
 import { StyleSheet, View, Text, Pressable, ScrollView } from "react-native";
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { useRouter } from "expo-router";
 import { BackIcon } from '../components/Icons';
 
@@ -10,37 +8,32 @@ export default function UserGuide() {
 
   const sections = [
     {
-      title: "1. Getting Started",
-      content: "Welcome to WhisperApp! This app uses OpenAI's Whisper models to perform high-quality, local transcription directly on your device. No data ever leaves your phone."
+      title: "Introduction",
+      content: "EchoVision is a high-performance transcription system that bridges human speech with hardware displays. It supports both on-device local processing and high-speed cloud transcription."
     },
     {
-      title: "2. Connecting",
-      content: "Use the 'Connection' section on the home screen to scan and connect to your Linux system via Bluetooth. This enables real-time data transfer."
+      title: "Transcription Engines",
+      content: "• Local Mode: Uses high-efficiency Whisper models (Tiny, Base, Small) that run entirely on your phone.\n• Cloud Mode: Connect to a remote Whisper server for superior accuracy and near-zero latency by offloading processing to powerful GPUs."
     },
     {
-      title: "3. Downloading Models",
-      content: "Before transcribing, you need to download a model. Go to Settings (top-right icon) and select a model size. You can also adjust display brightness and font size here."
+      title: "Hardware Bridge",
+      content: "Connect to your supported Linux hardware via the Bluetooth section on the Home screen. Once linked, any transcribed text is automatically streamed to your hardware display in real-time."
     },
     {
-      title: "4. Active Model",
-      content: "Once a model is downloaded, you can select it from the 'Active Model' list on the home screen. The selected model is highlighted and will be used for all transcriptions."
+      title: "Display Controls",
+      content: "Fine-tune your hardware experience in Settings. Adjust the display brightness and text scale using intuitive sliders to ensure optimal visibility in any environment."
     },
     {
-      title: "5. Transcription",
-      content: "Tap 'Show Transcript' on the home screen to enter the transcription view. Tap the microphone button to start speaking; your speech will be converted to text and sent to your connected device in real-time."
+      title: "Model Management",
+      content: "For local transcription, use the 'Model Builder' in Settings to download specialized language models. Keep your disk usage low by deleting unused models in the Storage section."
     }
   ];
 
   return (
-    <LinearGradient
-      colors={['#C7BEF4', '#EBF4BE']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <BackIcon color="#424242" />
+          <BackIcon width={22} height={22} color="#1A1A1A" />
         </Pressable>
         <Text style={styles.headerTitle}>User Guide</Text>
       </View>
@@ -48,11 +41,9 @@ export default function UserGuide() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {sections.map((section, index) => (
           <View key={index} style={styles.section}>
-            <View style={styles.glassContainer}>
-              <BlurView intensity={40} tint="light" style={styles.blurContent}>
-                <Text style={styles.sectionTitle}>{section.title}</Text>
-                <Text style={styles.sectionText}>{section.content}</Text>
-              </BlurView>
+            <Text style={styles.sectionLabel}>{section.title.toUpperCase()}</Text>
+            <View style={styles.card}>
+              <Text style={styles.sectionText}>{section.content}</Text>
             </View>
           </View>
         ))}
@@ -60,91 +51,108 @@ export default function UserGuide() {
         <View style={styles.footer}>
           <Pressable 
             onPress={() => router.replace('/' as any)}
-            style={styles.homeButton}
+            style={styles.primaryButton}
           >
-            <Text style={styles.homeButtonText}>Return to Home</Text>
+            <Text style={styles.primaryButtonText}>Return to Dashboard</Text>
           </Pressable>
-          <Text style={styles.footerText}>WhisperApp v1.0.0</Text>
+          <Text style={styles.versionText}>EchoVision v0.4.2</Text>
         </View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 50,
+    backgroundColor: '#F8F9FA',
+    paddingTop: 60,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     marginBottom: 20,
   },
   backButton: {
-    padding: 10,
-    borderRadius: 12,
-    marginRight: 15,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.5)",
+    borderColor: "#E5E5E5",
+    marginRight: 16,
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: "bold",
-    color: "#424242",
+    fontWeight: "800",
+    color: "#1A1A1A",
+    letterSpacing: -0.5,
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  glassContainer: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.5)",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#8E8E93",
+    marginBottom: 8,
+    marginLeft: 4,
+    letterSpacing: 1,
   },
-  blurContent: {
-    padding: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#2E66F5",
-    marginBottom: 10,
+  card: {
+    width: "100%",
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sectionText: {
     fontSize: 15,
-    color: "#424242",
+    color: "#3A3A3C",
     lineHeight: 22,
+    fontWeight: "500",
   },
   footer: {
     marginTop: 20,
+    paddingHorizontal: 10,
     alignItems: 'center',
+    gap: 16,
   },
-  footerText: {
+  primaryButton: {
+    width: "100%",
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: "#1A1A1A",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 16,
+  },
+  versionText: {
     fontSize: 12,
-    color: "#888",
-  },
-  homeButton: {
-    backgroundColor: "rgba(46, 102, 245, 0.1)",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: "rgba(46, 102, 245, 0.3)",
-  },
-  homeButtonText: {
-    color: "#2E66F5",
-    fontWeight: "bold",
-    fontSize: 14,
+    fontWeight: "600",
+    color: "#AEAEB2",
+    marginBottom: 20,
   }
 });

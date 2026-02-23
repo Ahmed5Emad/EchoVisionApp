@@ -45,26 +45,22 @@ export default function Index() {
   };
 
   return (
-    <LinearGradient 
-      colors={['#C7BEF4', '#EBF4BE']} 
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       {/* --- Header --- */}
       <View style={styles.header}>
+        <Text style={styles.headerTitle}>EchoVision</Text>
         <View style={styles.headerRight}>
           <Pressable 
             onPress={() => router.push('/user_guide' as any)} 
             style={styles.iconButton}
           >
-            <UserGuideIcon width={24} height={24} color="#424242" />
+            <UserGuideIcon width={22} height={22} color="#1A1A1A" />
           </Pressable>
           <Pressable 
             onPress={() => router.push('/settings' as any)} 
             style={styles.iconButton}
           >
-            <SettingsIcon color="#424242" />
+            <SettingsIcon width={22} height={22} color="#1A1A1A" />
           </Pressable>
         </View>
       </View>
@@ -73,97 +69,100 @@ export default function Index() {
         
         {/* --- Bluetooth Connection Section --- */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Connection</Text>
-          <View style={styles.glassContainer}>
-            <BlurView intensity={40} tint="light" style={styles.blurContentPadding}>
-              <View style={styles.statusRow}>
+          <Text style={styles.sectionLabel}>HARDWARE CONNECTION</Text>
+          <View style={styles.card}>
+            <View style={styles.statusRow}>
+              <View style={styles.statusInfo}>
+                <View style={[styles.statusIndicator, { backgroundColor: connectedDevice ? '#34C759' : '#FF3B30' }]} />
                 <Text style={styles.statusText}>
-                  {connectedDevice ? `Connected to ${connectedDevice.name}` : 'Not Connected'}
+                  {connectedDevice ? connectedDevice.name : 'No device connected'}
                 </Text>
-                {connectedDevice ? (
-                  <Pressable onPress={disconnect} style={styles.disconnectButton}>
-                    <Text style={styles.disconnectButtonText}>Disconnect</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable onPress={scanDevices} style={styles.scanButton} disabled={isScanning}>
-                    {isScanning ? (
-                      <ActivityIndicator color="#FFF" size="small" />
-                    ) : (
-                      <Text style={styles.scanButtonText}>Scan</Text>
-                    )}
-                  </Pressable>
-                )}
               </View>
-
-              {!connectedDevice && devices.length > 0 && (
-                <View style={styles.deviceList}>
-                  {devices.map((device) => (
-                    <Pressable 
-                      key={device.id} 
-                      style={styles.deviceItem}
-                      onPress={() => connectToDevice(device)}
-                    >
-                      <Text style={styles.deviceText}>{device.name || 'Unknown Device'}</Text>
-                    </Pressable>
-                  ))}
-                </View>
+              {connectedDevice ? (
+                <Pressable onPress={disconnect} style={styles.textButton}>
+                  <Text style={styles.disconnectText}>Disconnect</Text>
+                </Pressable>
+              ) : (
+                <Pressable onPress={scanDevices} style={styles.scanButton} disabled={isScanning}>
+                  {isScanning ? (
+                    <ActivityIndicator color="#FFF" size="small" />
+                  ) : (
+                    <Text style={styles.scanButtonText}>Search</Text>
+                  )}
+                </Pressable>
               )}
-              {error && <Text style={styles.errorText}>{error}</Text>}
-            </BlurView>
+            </View>
+
+            {!connectedDevice && devices.length > 0 && (
+              <View style={styles.deviceList}>
+                <Text style={styles.subLabel}>Available Devices</Text>
+                {devices.map((device) => (
+                  <Pressable 
+                    key={device.id} 
+                    style={styles.deviceItem}
+                    onPress={() => connectToDevice(device)}
+                  >
+                    <Text style={styles.deviceName}>{device.name || 'Unknown Device'}</Text>
+                    <View style={styles.connectChevron} />
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {error && <Text style={styles.errorText}>{error}</Text>}
           </View>
         </View>
 
         {/* --- Model Selection Section --- */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Model</Text>
-          <View style={styles.glassContainer}>
-            <BlurView intensity={40} tint="light" style={styles.blurContentPadding}>
-              {downloadedModels.length === 0 ? (
-                <Text style={styles.emptyText}>No models downloaded. Go to Settings to download one.</Text>
-              ) : (
-                <View style={styles.modelList}>
-                  {downloadedModels.map((m) => {
-                    const isActive = activeModel === m;
-                    return (
-                      <Pressable 
-                        key={m} 
-                        style={[styles.modelRow, isActive && styles.activeModelRow]}
-                        onPress={() => selectActiveModel(m)}
-                      >
-                        <View style={[styles.radioButton, isActive && styles.radioButtonSelected]}>
-                          {isActive && <View style={styles.radioButtonInner} />}
-                        </View>
-                        <Text style={[styles.modelText, isActive && styles.activeModelText]}>
-                          {m}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              )}
-            </BlurView>
+          <Text style={styles.sectionLabel}>TRANSCRIPTION ENGINE</Text>
+          <View style={styles.card}>
+            {downloadedModels.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No local models found.</Text>
+                <Pressable onPress={() => router.push('/settings' as any)}>
+                   <Text style={styles.linkText}>Go to Downloads →</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.modelList}>
+                {downloadedModels.map((m) => {
+                  const isActive = activeModel === m;
+                  return (
+                    <Pressable 
+                      key={m} 
+                      style={[styles.modelRow, isActive && styles.activeModelRow]}
+                      onPress={() => selectActiveModel(m)}
+                    >
+                      <Text style={[styles.modelText, isActive && styles.activeModelText]}>
+                        {m}
+                      </Text>
+                      {isActive && <View style={styles.checkIcon} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
           </View>
         </View>
 
         {/* --- Start Button --- */}
         <Pressable 
           onPress={() => router.push('/transcription' as any)}
-          style={styles.glassContainerSmall}
+          style={styles.primaryButton}
         >
-          <BlurView intensity={40} tint="light" style={styles.blurContent}>
-            <Text style={styles.showTranscriptText}>Start</Text>
-          </BlurView>
+          <Text style={styles.primaryButtonText}>Start Transcription</Text>
         </Pressable>
 
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 50,
+    backgroundColor: '#F8F9FA',
+    paddingTop: 60,
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -171,169 +170,211 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    marginBottom: 25,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: "#1A1A1A",
+    letterSpacing: -0.5,
   },
   headerRight: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
   },
   iconButton: {
-    width: 45,
-    height: 45,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#FFFFFF",
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.5)",
+    borderColor: "#E5E5E5",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 28,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#424242",
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#8E8E93",
     marginBottom: 10,
-    marginLeft: 5,
+    marginLeft: 4,
+    letterSpacing: 1,
   },
-  glassContainer: {
+  card: {
     width: "100%",
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.5)",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  blurContentPadding: {
-    padding: 15,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 3,
   },
   statusRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  statusText: {
-    fontSize: 14,
-    color: '#424242',
-    fontWeight: '500',
+  statusInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
   },
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 12,
+  },
+  statusText: {
+    fontSize: 16,
+    color: '#1A1A1A',
+    fontWeight: '600',
+  },
   scanButton: {
-    backgroundColor: '#2E66F5',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 10,
-    minWidth: 70,
+    minWidth: 80,
     alignItems: 'center',
   },
   scanButtonText: {
     color: '#FFF',
-    fontWeight: 'bold',
-    fontSize: 13,
+    fontWeight: '700',
+    fontSize: 14,
   },
-  disconnectButton: {
-    backgroundColor: '#FF4B4B',
-    paddingHorizontal: 12,
+  textButton: {
     paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 12,
   },
-  disconnectButtonText: {
-    color: '#FFF',
-    fontWeight: 'bold',
-    fontSize: 12,
+  disconnectText: {
+    color: '#FF3B30',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  subLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#8E8E93",
+    marginTop: 15,
+    marginBottom: 8,
+    textTransform: 'uppercase',
   },
   deviceList: {
-    marginTop: 10,
+    marginTop: 5,
     gap: 8,
   },
   deviceItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: '#F2F2F7',
+    padding: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  deviceText: {
-    fontSize: 13,
-    color: '#424242',
+  deviceName: {
+    fontSize: 15,
+    color: '#1A1A1A',
+    fontWeight: '500',
+  },
+  connectChevron: {
+    width: 8,
+    height: 8,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderColor: '#C7C7CC',
+    transform: [{ rotate: '45deg' }],
   },
   modelList: {
     flexDirection: 'column',
-    gap: 8,
+    gap: 10,
   },
   modelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    justifyContent: 'space-between',
+    padding: 14,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderWidth: 1,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
     borderColor: 'transparent',
-    gap: 12,
   },
   activeModelRow: {
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    borderColor: '#2E66F5',
-  },
-  radioButton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#999',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioButtonSelected: {
-    borderColor: '#2E66F5',
-  },
-  radioButtonInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#2E66F5',
+    backgroundColor: '#F0F7FF',
+    borderColor: '#007AFF',
   },
   modelText: {
-    fontSize: 14,
-    color: '#424242',
+    fontSize: 15,
+    color: '#48484A',
     fontWeight: '500',
   },
   activeModelText: {
-    fontWeight: 'bold',
-    color: '#2E66F5',
+    fontWeight: '700',
+    color: '#007AFF',
+  },
+  checkIcon: {
+    width: 10,
+    height: 18,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderColor: '#007AFF',
+    transform: [{ rotate: '45deg' }, { translateY: -2 }],
+    marginRight: 5,
+  },
+  emptyContainer: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    gap: 8,
   },
   emptyText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 14,
+    color: '#8E8E93',
     fontStyle: 'italic',
   },
+  linkText: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '700',
+  },
   errorText: {
-    color: '#FF4B4B',
-    fontSize: 11,
-    marginTop: 8,
+    color: '#FF3B30',
+    fontSize: 12,
+    marginTop: 12,
+    fontWeight: '500',
+    textAlign: 'center',
   },
-  glassContainerSmall: {
+  primaryButton: {
     width: "100%",
-    height: 70,   
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.5)",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  blurContent: {
-    flex: 1, 
+    height: 58,   
+    borderRadius: 16,
+    backgroundColor: "#1A1A1A",
     justifyContent: "center",
     alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
+    marginTop: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  showTranscriptText: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#424242",
+  primaryButtonText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 });

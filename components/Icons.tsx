@@ -173,3 +173,13 @@ export function CloseIcon({ width = 24, height = 24, color = "#FF4B4B", style }:
   );
 
 }
+
+export function ServerIcon({ width = 24, height = 24, color = "#424242", style }: IconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 24 24" fill="none" style={style}>
+      <Rect x="2" y="2" width="20" height="8" rx="2" stroke={color} strokeWidth="2" />
+      <Rect x="2" y="14" width="20" height="8" rx="2" stroke={color} strokeWidth="2" />
+      <Path d="M6 6h.01M6 18h.01M10 6h.01M10 18h.01" stroke={color} strokeWidth="3" strokeLinecap="round" />
+    </Svg>
+  );
+}

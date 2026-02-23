@@ -12,7 +12,7 @@ Built with **Expo** and **whisper.rn**, this app performs all inference directly
 - **GUI & Terminal Receivers:** Choose between a minimalist Terminal UI or a dedicated GUI for smart glasses.
 - **Arabic Script Support:** Full support for Arabic transcription with proper character shaping and RTL layout.
 - **Remote Controls:** Control font size and screen brightness directly from the mobile app.
-- **Multiple Models:** Support for various Whisper model sizes (Tiny, Base, Small, Medium, Large).
+- **Multiple Models:** Support for various Whisper model sizes (Tiny, Base, Small).
 - **Modern UI:** A beautiful "Glassmorphism" design using `expo-blur` and linear gradients.
 - **Hands-Free Mode:** Integrated silence detection and auto-start for seamless recording.
 

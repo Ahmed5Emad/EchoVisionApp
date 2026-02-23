@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { StyleSheet, View, Text, Pressable, ScrollView, ActivityIndicator, Alert, LogBox } from "react-native";
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { useRouter } from "expo-router";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -11,6 +9,8 @@ import { AudioModule } from 'expo-audio';
 import * as Speech from 'expo-speech';
 // @ts-ignore
 import * as WhisperRN from 'whisper.rn';
+import LiveAudioStream from 'react-native-live-audio-stream';
+import { Buffer } from 'buffer';
 
 // --- CUSTOM COMPONENTS ---
 import { MicIcon, WaveformIcon, StopIcon, MicStartIcon, KeyboardIcon, BackIcon } from '@/components/Icons';
@@ -36,6 +36,8 @@ export default function Transcription() {
   const [modelPath, setModelPath] = useState<string | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [selectedModel, setSelectedModel] = useState('tiny.en');
+  const [isRemote, setIsRemote] = useState(false);
+  const [serverUrl, setServerUrl] = useState('');
   const [messages, setMessages] = useState<string[]>([]);
   const [currentText, setCurrentText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -45,8 +47,8 @@ export default function Transcription() {
   const stopLegacyRef = useRef<(() => Promise<void>) | null>(null);
   const whisperContextRef = useRef<any>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   
-  // Track last sent text to avoid repetition
   const lastSentTextRef = useRef("");
   const currentTextRef = useRef("");
   const silenceTimerRef = useRef<any>(null);
@@ -57,6 +59,7 @@ export default function Transcription() {
     setupApp();
     return () => {
       stopRecordingSession();
+      LiveAudioStream.stop();
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       Speech.stop();
     };
@@ -73,7 +76,6 @@ export default function Transcription() {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages, currentText]);
 
-  // --- TTS Handler ---
   const speakText = (text: string) => {
     Speech.stop(); 
     Speech.speak(text, { language: selectedLanguage === 'ar' ? 'ar-SA' : 'en-US', pitch: 1.0, rate: 0.9 });
@@ -81,6 +83,11 @@ export default function Transcription() {
 
   const stopRecordingSession = async () => {
     try {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      LiveAudioStream.stop();
       if (realtimeRef.current) {
         await realtimeRef.current.stop();
         await realtimeRef.current.release();
@@ -90,32 +97,37 @@ export default function Transcription() {
         await stopLegacyRef.current();
         stopLegacyRef.current = null;
       }
-    } catch (e) {
-      // Ignore cleanup errors
-    }
+    } catch (e) { }
   };
 
   const requestMicrophonePermission = async () => {
     try {
       const status = await AudioModule.requestRecordingPermissionsAsync();
-      if (!status.granted) {
-        Alert.alert("Permission Required", "Go to Settings > Apps and enable Microphone access.");
-        return false;
-      }
-      return true;
-    } catch (error) {
-      return false;
-    }
+      return status.granted;
+    } catch (error) { return false; }
   };
 
   const setupApp = async () => {
     try {
       const lang = await AsyncStorage.getItem('language');
       const model = await AsyncStorage.getItem('model');
+      const remote = await AsyncStorage.getItem('isRemote');
+      const url = await AsyncStorage.getItem('serverUrl');
+
       if (lang) setSelectedLanguage(lang);
-      if (model) setSelectedModel(model);
+      if (remote) setIsRemote(remote === 'true');
+      if (url) setServerUrl(url);
       
-      await setupModel(model || 'tiny.en');
+      const defaultModel = remote === 'true' ? 'small' : 'tiny.en';
+      if (model) setSelectedModel(model);
+      else setSelectedModel(defaultModel);
+      
+      if (remote === 'true') {
+        setModelReady(true);
+        setStatus("Remote Ready");
+      } else {
+        await setupModel(model || 'tiny.en');
+      }
     } catch (e) {
       console.error("Setup error:", e);
       setStatus("Error loading settings");
@@ -125,215 +137,162 @@ export default function Transcription() {
   const setupModel = async (modelId: string) => {
     setStatus("Checking Model...");
     const FS = FileSystem;
-    
-    if (!FS.documentDirectory) {
-      setStatus("Error: FileSystem Invalid");
-      return;
-    }
-
+    if (!FS.documentDirectory) return;
     const fileDir = FS.documentDirectory + 'whisper-models/';
     const fileUri = fileDir + `ggml-${modelId}.bin`;
     
-    // Default URL if not found (fallback)
-    const modelUrls: Record<string, string> = {
-      'tiny.en': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin',
-      'base.en': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin',
-      'tiny': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
-      'base': 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
-    };
-
     try {
       const dirInfo = await FS.getInfoAsync(fileDir);
       if (!dirInfo.exists) await FS.makeDirectoryAsync(fileDir);
-
       const fileInfo = await FS.getInfoAsync(fileUri);
       if (!fileInfo.exists) {
         setStatus("Downloading Model...");
-        const url = modelUrls[modelId] || modelUrls['tiny.en'];
+        const url = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${modelId}.bin`;
         await FS.downloadAsync(url, fileUri);
       }
-
       setModelPath(fileUri);
-      
       setStatus("Loading Core...");
       if (initWhisper) {
         whisperContextRef.current = await initWhisper({ filePath: fileUri });
         setModelReady(true);
         setStatus("Ready");
-      } else {
-        setStatus("Error: initWhisper missing");
       }
-
-    } catch (error) {
-      console.error("Setup error:", error);
-      setStatus("Error loading model");
-    }
+    } catch (error) { setStatus("Error loading model"); }
   };
 
   const handleNewTranscription = (text: string) => {
     if (!text) return;
-
-    // --- SESSION REPETITION DETECTION ---
-    // Detect if Whisper is repeating the last finalized message at the start of a new segment
     if (lastSentTextRef.current === "" && sessionPrefixRef.current === "" && lastFinalizedTextRef.current !== "") {
        const trimmedText = text.trim().toLowerCase();
        const trimmedFinalized = lastFinalizedTextRef.current.trim().toLowerCase();
-       
-       // If the new transcription starts with the last finalized text, mark it as a prefix to ignore
        if (trimmedText.startsWith(trimmedFinalized)) {
           sessionPrefixRef.current = text.slice(0, lastFinalizedTextRef.current.length);
        }
     }
-
-    // Clean the incoming text by removing the detected session prefix
     let cleanText = text;
     if (sessionPrefixRef.current && text.startsWith(sessionPrefixRef.current)) {
        cleanText = text.slice(sessionPrefixRef.current.length);
     }
-
-    // If no new content after cleaning or it matches the last sent part, skip
     if (!cleanText || cleanText === lastSentTextRef.current) return;
-
-    // Filter out noise/hallucination tokens common in silence 
     const noisePatterns = [/\[BLANK_AUDIO\]/i, /\[music\]/i, /\[silence\]/i, /\[noise\]/i, /\(music\)/i , /\[SOUND]/i ];
     if (noisePatterns.some(pattern => pattern.test(cleanText))) return;
 
-    // Check if it's an extension of what we already have in this segment
-    let delta = "";
-    if (cleanText.startsWith(lastSentTextRef.current)) {
-      delta = cleanText.slice(lastSentTextRef.current.length);
-    } else {
-      // If it's completely different, treat the whole thing as new (or a reset)
-      delta = " " + cleanText;
-    }
+    let delta = cleanText.startsWith(lastSentTextRef.current) ? cleanText.slice(lastSentTextRef.current.length) : " " + cleanText;
 
     if (delta.trim().length > 0) {
       setCurrentText(cleanText);
-      if (connectedDevice) {
-        sendData(delta);
-      }
+      if (connectedDevice) sendData(delta);
       lastSentTextRef.current = cleanText;
 
-      // --- HANDS-FREE SILENCE DETECTION ---
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = setTimeout(async () => {
         if (currentTextRef.current.trim().length > 0) {
-          // Commit current text to messages
           setMessages(prev => [...prev, currentTextRef.current]);
           lastFinalizedTextRef.current = currentTextRef.current;
-          setCurrentText("");
-          lastSentTextRef.current = "";
-          sessionPrefixRef.current = "";
-
-          // Restart session to clear internal Whisper buffer
-          await stopRecordingSession();
-          setIsRecording(false);
-          
-          // Brief pause then restart
-          setTimeout(() => {
-            toggleRecording();
-          }, 300);
+          setCurrentText(""); lastSentTextRef.current = ""; sessionPrefixRef.current = "";
+          if (isRemote) {
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: "reset" }));
+          } else {
+            await stopRecordingSession();
+            setIsRecording(false);
+            setTimeout(() => { toggleRecording(); }, 300);
+          }
         }
-      }, 2000); // 2 seconds of silence triggers finalization
+      }, 2000);
     }
   };
 
   const toggleRecording = async () => {
-    if (!modelReady || !modelPath) return;
-
+    if (!modelReady) return;
     if (isRecording) {
-      // --- STOP ---
       await stopRecordingSession();
       setIsRecording(false);
-      
       if (currentText.trim().length > 0) {
         setMessages(prev => [...prev, currentText]);
         lastFinalizedTextRef.current = currentText;
-        setCurrentText("");
-        lastSentTextRef.current = "";
-        sessionPrefixRef.current = "";
+        setCurrentText(""); lastSentTextRef.current = ""; sessionPrefixRef.current = "";
       }
     } else {
-      // --- START ---
       const hasPermission = await requestMicrophonePermission();
       if (!hasPermission) return;
-
       setIsRecording(true);
-      setCurrentText("");
-      lastSentTextRef.current = "";
-      sessionPrefixRef.current = "";
-      
+      setCurrentText(""); lastSentTextRef.current = ""; sessionPrefixRef.current = "";
       try {
-        if (RealtimeTranscriber) {
+        if (isRemote) {
+          if (!serverUrl) { setIsRecording(false); return; }
+          const ws = new WebSocket(serverUrl);
+          wsRef.current = ws;
+                      ws.onopen = () => {
+                      ws.send(JSON.stringify({ type: "set_language", language: selectedLanguage }));
+                      let sm = selectedModel;
+                      const modelMap: Record<string, string> = { 'tiny': 'tiny', 'base': 'base', 'small': 'small' };
+                      const mapped = Object.keys(modelMap).find(k => selectedModel.startsWith(k));
+                      if (mapped) sm = modelMap[mapped];
+                      else if (selectedModel === 'tiny.en' || selectedModel === 'tiny') sm = selectedModel;
+                      else if (selectedModel.startsWith('base')) sm = 'base';
+                      else if (selectedModel.startsWith('small')) sm = 'small';
+                      else sm = 'small';
+                      ws.send(JSON.stringify({ type: "switch_model", model: sm }));
+                      ws.send(JSON.stringify({ type: "reset" }));            LiveAudioStream.init({ sampleRate: 16000, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 4096 });
+            LiveAudioStream.on('data', (d) => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                const b = Buffer.from(d, 'base64');
+                ws.send(b.buffer.slice(b.offset, b.offset + b.byteLength));
+              }
+            });
+            LiveAudioStream.start();
+          };
+          ws.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            if (data.type === "partial" || data.type === "final") handleNewTranscription(data.text);
+            else if (data.type === "download_start") setStatus(`Downloading ${data.model}...`);
+            else if (data.type === "download_progress") setStatus(`Downloading ${data.model}: ${Math.round(data.progress)}%`);
+            else if (data.type === "download_complete") setStatus(`Model ready.`);
+            else if (data.type === "switching_model") setStatus(`Switching to ${data.model}...`);
+            else if (data.type === "switched_model") setStatus(`Ready (Remote: ${data.model})`);
+            else if (data.type === "error") setStatus("Server Error");
+          };
+          ws.onerror = () => { setIsRecording(false); stopRecordingSession(); };
+        } else if (RealtimeTranscriber) {
            const realtime = new RealtimeTranscriber({
-             filePath: modelPath,
-             language: selectedLanguage,
-             maxLen: 1,
-             beamSize: 1,
-             realtimeAudioSec: 60,
+             filePath: modelPath!, language: selectedLanguage, maxLen: 1, beamSize: 1, realtimeAudioSec: 60,
              vad: { enable: true, lowThreshold: 0.6, minSpeechDurationMs: 100 }
            });
-           
-           realtime.on('transcribe', (data: any) => {
-             if (data?.result) {
-               handleNewTranscription(data.result);
-             }
-           });
-           
+           realtime.on('transcribe', (data: any) => { if (data?.result) handleNewTranscription(data.result); });
            await realtime.start();
            realtimeRef.current = realtime;
-
-        } else if (whisperContextRef.current) {
-           // Legacy Fallback
-           const options: any = {
-             language: selectedLanguage, maxLen: 1, beamSize: 1, realtimeAudioSec: 60, audioSessionOnStart: true, 
-           };
-
-           const { stop, subscribe } = await whisperContextRef.current.transcribeRealtime(options);
-           stopLegacyRef.current = stop;
-
-           subscribe((event: any) => {
-             if (event.data?.result) {
-               handleNewTranscription(event.data.result);
-             }
-           });
         }
-      } catch (e) {
-        setIsRecording(false);
-        const errStr = String(e);
-        if (errStr.includes("-100")) {
-           Alert.alert("Microphone Error", "Initialization failed (State: -100). Restart app.");
-        } else {
-           Alert.alert("Error", "Could not start recording.");
-        }
-      }
+      } catch (e) { setIsRecording(false); }
     }
   };
 
   return (
-    <LinearGradient
-      colors={['#C7BEF4', '#EBF4BE']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <BackIcon color="#424242" />
+          <BackIcon width={22} height={22} color="#1A1A1A" />
         </Pressable>
         <Text style={styles.headerTitle}>Transcription</Text>
-        {connectedDevice && (
-          <View style={styles.btStatus}>
-            <View style={styles.btDot} />
-            <Text style={styles.btText}>Live</Text>
-          </View>
-        )}
+        <View style={styles.headerBadges}>
+          {isRemote && (
+            <View style={[styles.statusBadge, { backgroundColor: '#E0EEFF' }]}>
+              <View style={[styles.statusDot, { backgroundColor: '#007AFF' }]} />
+              <Text style={[styles.statusBadgeText, { color: '#007AFF' }]}>Remote</Text>
+            </View>
+          )}
+          {connectedDevice && (
+            <View style={[styles.statusBadge, { backgroundColor: '#E8F5E9' }]}>
+              <View style={[styles.statusDot, { backgroundColor: '#34C759' }]} />
+              <Text style={[styles.statusBadgeText, { color: '#34C759' }]}>Hardware</Text>
+            </View>
+          )}
+        </View>
       </View>
 
-      <View style={styles.bigFrame}>
+      <View style={styles.contentFrame}>
         {!modelReady && (
           <View style={styles.loaderContainer}>
-            <ActivityIndicator color="#2E66F5" />
+            <ActivityIndicator color="#007AFF" />
             <Text style={styles.statusText}>{status}</Text>
           </View>
         )}
@@ -345,208 +304,85 @@ export default function Transcription() {
           showsVerticalScrollIndicator={false}
         >
           {messages.length === 0 && currentText === "" && modelReady && (
-            <View style={styles.messageBubbleFull}>
-              <Text style={styles.messageText}>Hands-free mode active. Start speaking and I will transcribe automatically.</Text>
+            <View style={styles.emptyPrompt}>
+              <Text style={styles.emptyPromptText}>Awaiting voice input...</Text>
+              <Text style={styles.emptyPromptSub}>Hardware bridge is active.</Text>
             </View>
           )}
 
           {messages.map((msg, index) => (
-            <View key={index} style={styles.messageBubbleFull}>
+            <View key={index} style={styles.messageCard}>
               <Text style={styles.messageText}>{msg}</Text>
               <Pressable 
-                style={styles.micContainer}
+                style={styles.speakButton}
                 onPress={() => speakText(msg)}
                 hitSlop={15}
               >
-                <MicIcon width={12} height={16} color="#424242" />
+                <MicIcon width={12} height={16} color="#007AFF" />
               </Pressable>
             </View>
           ))}
 
           {currentText.length > 0 && (
-            <View style={[styles.messageBubbleFull, styles.activeBubble]}>
-              <Text style={styles.messageText}>{currentText}</Text>
-              <View style={styles.micContainer}>
-                <ActivityIndicator size="small" color="#2E66F5" />
+            <View style={[styles.messageCard, styles.activeMessageCard]}>
+              <Text style={[styles.messageText, styles.activeMessageText]}>{currentText}</Text>
+              <View style={styles.activeIndicator}>
+                <ActivityIndicator size="small" color="#007AFF" />
               </View>
             </View>
           )}
         </ScrollView>
       </View>
 
-      <View style={styles.footerGlass}>
-        <BlurView intensity={50} tint="light" style={styles.footerContent}>
-          <Pressable style={styles.iconButton} onPress={() => router.push('/settings')}>
-             <KeyboardIcon width={28} height={28} color="#424242" />
+      <View style={styles.footer}>
+          <Pressable style={styles.footerIconButton} onPress={() => router.push('/settings')}>
+             <KeyboardIcon width={24} height={24} color="#1A1A1A" />
           </Pressable>
-          <View style={styles.glassContainerWave}>
-             <WaveformIcon color={isRecording ? "#FF4B4B" : "#2E66F5"} />
+          <View style={styles.waveformContainer}>
+             <WaveformIcon color={isRecording ? "#FF3B30" : "#007AFF"} />
           </View>
           <Pressable 
-            style={[styles.iconButton, isRecording && styles.recordingActive]} 
+            style={[styles.recordButton, isRecording && styles.recordButtonActive]} 
             onPress={toggleRecording}
             disabled={!modelReady}
           >
             {isRecording ? (
-              <StopIcon width={32} height={32} color="#FF4B4B" />
+              <StopIcon width={28} height={28} color="#FF3B30" />
             ) : (
-              <MicStartIcon width={32} height={32} color={!modelReady ? "#ccc" : "#2E66F5"} />
+              <MicStartIcon width={28} height={28} color={!modelReady ? "#C7C7CC" : "#007AFF"} />
             )}
           </Pressable>
-        </BlurView>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 40,
-    paddingBottom: 20,
-    gap: 20,
-    alignItems: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 10,
-    position: 'relative',
-  },
-  backButton: {
-    padding: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    borderRadius: 12,
-    marginRight: 15,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#424242",
-  },
-  btStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 'auto',
-    gap: 6,
-  },
-  btDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4CAF50',
-  },
-  btText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#424242',
-  },
-  bigFrame: {
-    flex: 1,
-    width: "100%",
-    paddingVertical: 15,
-    borderRadius: 20,
-    gap: 10,
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.5)",
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    overflow: 'hidden',
-  },
-  loaderContainer: {
-    padding: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  statusText: {
-    color: "#555",
-    fontSize: 14,
-  },
-  scrollView: {
-    width: "100%",
-  },
-  scrollContent: {
-    paddingHorizontal: 15,
-    gap: 10,
-    paddingBottom: 20,
-  },
-  messageBubbleFull: {
-    width: "100%",
-    backgroundColor: "rgba(255, 255, 255, 0.4)",
-    padding: 15,
-    paddingBottom: 25,
-    borderRadius: 10,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderLeftColor: '#2E66F5',
-    borderRightColor: '#2E66F5',
-    position: 'relative',
-  },
-  activeBubble: {
-    borderLeftColor: '#FF4B4B',
-    borderRightColor: '#FF4B4B',
-    backgroundColor: "rgba(255, 255, 255, 0.6)",
-  },
-  messageText: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#424242",
-    lineHeight: 22,
-  },
-  micContainer: {
-    position: 'absolute',
-    bottom: 8,
-    right: 10,
-    padding: 5,
-  },
-  footerGlass: {
-    width: "100%",
-    height: 80,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.5)",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-  },
-  footerContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    gap: 10,
-  },
-  iconButton: {
-    width: 50,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.9)",
-  },
-  recordingActive: {
-    borderColor: "#FF4B4B",
-    backgroundColor: "rgba(255, 75, 75, 0.1)",
-  },
-  glassContainerWave: {
-    flex: 1,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.9)",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  }
+  container: { flex: 1, backgroundColor: '#F8F9FA', paddingTop: 60 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, marginBottom: 20, width: '100%' },
+  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#FFFFFF", justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: "#E5E5E5", marginRight: 16 },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "#1A1A1A" },
+  headerBadges: { flexDirection: 'row', marginLeft: 'auto', gap: 8 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, gap: 6 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusBadgeText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  contentFrame: { flex: 1, width: "100%", backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, borderWidth: 1, borderColor: '#E5E5E5', overflow: 'hidden' },
+  loaderContainer: { padding: 20, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 12, borderBottomWidth: 1, borderBottomColor: '#F2F2F7' },
+  statusText: { color: "#8E8E93", fontSize: 14, fontWeight: '600' },
+  scrollView: { flex: 1 },
+  scrollContent: { padding: 24, gap: 16, paddingBottom: 40 },
+  emptyPrompt: { marginTop: 60, alignItems: 'center', gap: 8 },
+  emptyPromptText: { fontSize: 18, fontWeight: '700', color: '#AEAEB2' },
+  emptyPromptSub: { fontSize: 14, fontWeight: '500', color: '#C7C7CC' },
+  messageCard: { width: "100%", backgroundColor: "#F2F2F7", padding: 18, paddingBottom: 30, borderRadius: 20, borderWidth: 1, borderColor: 'transparent', position: 'relative' },
+  activeMessageCard: { backgroundColor: "#FFFFFF", borderColor: "#007AFF", borderWidth: 1.5 },
+  messageText: { fontSize: 16, fontWeight: "600", color: "#1C1C1E", lineHeight: 24 },
+  activeMessageText: { color: "#007AFF" },
+  speakButton: { position: 'absolute', bottom: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
+  activeIndicator: { position: 'absolute', bottom: 12, right: 12 },
+  footer: { width: "100%", height: 100, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E5E5E5', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingBottom: 20 },
+  footerIconButton: { width: 54, height: 54, justifyContent: 'center', alignItems: 'center', backgroundColor: "#F2F2F7", borderRadius: 27 },
+  recordButton: { width: 64, height: 64, justifyContent: 'center', alignItems: 'center', backgroundColor: "#F2F2F7", borderRadius: 32, borderWidth: 1, borderColor: "#E5E5E5" },
+  recordButtonActive: { borderColor: "#FF3B30", backgroundColor: "#FFF1F0" },
+  waveformContainer: { flex: 1, height: 54, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 }
 });

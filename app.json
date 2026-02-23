@@ -2,12 +2,17 @@
   "expo": {
     "name": "WhisperApp",
     "slug": "WhisperApp",
-    "version": "0.4.2",
+    "version": "0.5.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/transparent.png",
     "scheme": "whisperapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/transparent.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A1A1A"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.WhisperApp",
@@ -16,9 +21,13 @@
       }
     },
     "android": {
+      "splash": {
+        "image": "./assets/images/transparent.png",
+        "backgroundColor": "#1A1A1A"
+      },
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/icon.png"
+        "backgroundColor": "#1A1A1A",
+        "foregroundImage": "./assets/images/transparent.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -56,12 +65,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "image": "./assets/images/transparent.png",
+          "backgroundColor": "#1A1A1A",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#1A1A1A"
           }
         }
       ],

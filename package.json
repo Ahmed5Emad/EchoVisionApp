@@ -1,7 +1,7 @@
 {
   "name": "whisperapp",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "0.5.0",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -45,6 +45,7 @@
     "react-native": "0.81.5",
     "react-native-ble-plx": "^3.5.0",
     "react-native-gesture-handler": "~2.28.0",
+    "react-native-live-audio-stream": "^1.1.1",
     "react-native-reanimated": "^4.2.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
