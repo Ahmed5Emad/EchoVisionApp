@@ -115,11 +115,11 @@ async def main():
     receiver = WhisperReceiver()
     
     print(term.clear())
-    print(term.bold_blue("=== WhisperApp Glass Receiver ==="))
+    print(term.bold_blue("=== EchoVision Glass Receiver ==="))
     print(term.yellow("Initializing Bluetooth..."))
 
     # Set up the server
-    server = BlessServer(name="WhisperLinux")
+    server = BlessServer(name="EchoVisionLinux")
     server.read_request_func = lambda char: b""
     server.write_request_func = receiver.write_request
 

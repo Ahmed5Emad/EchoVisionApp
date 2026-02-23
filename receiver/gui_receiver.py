@@ -18,7 +18,7 @@ CHARACTERISTIC_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"
 class GlassGUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Whisper Glass")
+        self.root.title("EchoVision Glass")
         
         # Set to fullscreen or small window
         self.root.geometry("600x400")
@@ -123,7 +123,7 @@ async def main():
     gui = GlassGUI()
     receiver = WhisperReceiver(gui)
     
-    server = BlessServer(name="WhisperLinux")
+    server = BlessServer(name="EchoVisionLinux")
     server.read_request_func = lambda char: b""
     server.write_request_func = receiver.write_request
 

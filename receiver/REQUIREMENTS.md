@@ -1,4 +1,4 @@
-# WhisperApp Receiver Requirements
+# EchoVision Receiver Requirements
 
 To run the Bluetooth receiver on your Linux system, the following dependencies are required.
 

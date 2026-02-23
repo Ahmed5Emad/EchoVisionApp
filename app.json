@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "WhisperApp",
-    "slug": "WhisperApp",
+    "name": "EchoVision",
+    "slug": "EchoVision",
     "version": "0.5.0",
     "orientation": "portrait",
     "icon": "./assets/images/transparent.png",
-    "scheme": "whisperapp",
+    "scheme": "echovision",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.WhisperApp",
+      "bundleIdentifier": "com.anonymous.EchoVision",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -31,7 +31,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.WhisperApp",
+      "package": "com.anonymous.EchoVision",
       "permissions": [
         "RECORD_AUDIO",
         "BLUETOOTH",
@@ -59,7 +59,7 @@
             "peripheral",
             "central"
           ],
-          "bluetoothAlwaysPermission": "Allow WhisperApp to use Bluetooth to send transcriptions to your Linux system."
+          "bluetoothAlwaysPermission": "Allow EchoVision to use Bluetooth to send transcriptions to your Linux system."
         }
       ],
       [
@@ -99,5 +99,5 @@
       }
     }
   },
-  "name": "whisperapp"
+  "name": "echovision"
 }

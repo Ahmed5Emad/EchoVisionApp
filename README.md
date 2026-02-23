@@ -1,7 +1,6 @@
-# WhisperApp 🎙️
+# EchoVision 🎙️
 
-WhisperApp is a powerful, privacy-focused React Native application that brings **local, on-device audio transcription** to your mobile device using OpenAI's Whisper model. 
-
+EchoVision is a powerful, privacy-focused React Native application that brings **local, on-device audio transcription** to your mobile device using OpenAI's Whisper model.
 Built with **Expo** and **whisper.rn**, this app performs all inference directly on your phone. This means your audio **never leaves your device**, ensuring complete privacy and full offline functionality.
 
 ## ✨ Key Features
@@ -42,8 +41,8 @@ Built with **Expo** and **whisper.rn**, this app performs all inference directly
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/whisper-app.git
-    cd whisper-app
+    git clone https://github.com/your-username/echovision.git
+    cd echovision
     ```
 
 2.  **Install mobile dependencies:**
@@ -59,7 +58,7 @@ Built with **Expo** and **whisper.rn**, this app performs all inference directly
 ## 📖 Usage Guide
 
 ### 1. Bluetooth Streaming (Linux)
-WhisperApp can stream transcriptions directly to your Linux system or Smart Glass display.
+EchoVision can stream transcriptions directly to your Linux system or Smart Glass display.
 
 #### Set up the Linux Receiver:
 1. Navigate to the receiver directory:
