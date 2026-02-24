@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { BluetoothProvider } from "../context/BluetoothContext";
 import { DownloadProvider } from "../context/DownloadContext";
@@ -33,14 +34,13 @@ export default function Layout() {
 
   return (
     <View style={{ flex: 1 }}>
+      <StatusBar style="dark" translucent={true} />
       <DownloadProvider>
         <BluetoothProvider>
           <Stack
             screenOptions={{
               headerShown: false,
               animation: "fade",
-              statusBarTranslucent: true,
-              statusBarStyle: "dark",
             }}
           />
         </BluetoothProvider>

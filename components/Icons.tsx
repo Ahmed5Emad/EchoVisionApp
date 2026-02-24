@@ -53,6 +53,16 @@ export function KeyboardIcon({ width = 24, height = 24, color = "#424242", style
   );
 }
 
+export function ClearIcon({ width = 24, height = 24, color = "#424242", style }: IconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+      <Path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z" />
+      <Path d="M18 9l-6 6" />
+      <Path d="M12 9l6 6" />
+    </Svg>
+  );
+}
+
 export function BackIcon({ width = 24, height = 24, color = "#424242", style }: IconProps) {
   return (
     <Svg width={width} height={height} viewBox="0 0 24 24" fill="none" style={style}>
@@ -90,6 +100,15 @@ export function UserGuideIcon({ width = 36, height = 36, color = "#424242", styl
   return (
     <Svg width={width} height={height} viewBox="0 0 36 36" fill="none" style={style}>
       <Path d="M4 36C2.9 36 1.95867 35.6087 1.176 34.826C0.393333 34.0433 0.00133333 33.1013 0 32V4C0 2.9 0.392 1.95867 1.176 1.176C1.96 0.393333 2.90133 0.00133333 4 0H32C33.1 0 34.042 0.392 34.826 1.176C35.61 1.96 36.0013 2.90133 36 4V32C36 33.1 35.6087 34.042 34.826 34.826C34.0433 35.61 33.1013 36.0013 32 36H4ZM4 4V32H32V4H28V18L23 15L18 18V4H4Z" fill={color} />
+    </Svg>
+  );
+}
+
+export function QuestionMarkIcon({ width = 24, height = 24, color = "#424242", style }: IconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 24 24" fill="none" style={style}>
+      <Path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <Path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </Svg>
   );
 }

@@ -13,10 +13,28 @@ import LiveAudioStream from 'react-native-live-audio-stream';
 import { Buffer } from 'buffer';
 
 // --- CUSTOM COMPONENTS ---
-import { MicIcon, WaveformIcon, StopIcon, MicStartIcon, KeyboardIcon, BackIcon } from '@/components/Icons';
+import { MicIcon, WaveformIcon, StopIcon, MicStartIcon, ClearIcon, BackIcon } from '@/components/Icons';
 import { useBluetooth } from '../context/BluetoothContext';
 
-const { initWhisper, RealtimeTranscriber } = WhisperRN;
+// Define types for WhisperRN
+interface WhisperContext {
+  transcribeRealtime: (options: any) => Promise<{
+    stop: () => Promise<void>;
+    subscribe: (callback: (event: any) => void) => void;
+  }>;
+}
+
+interface RealtimeTranscriberInstance {
+  start: () => Promise<void>;
+  stop: () => Promise<void>;
+  release: () => Promise<void>;
+  on: (event: string, callback: (data: any) => void) => void;
+}
+
+const { initWhisper, RealtimeTranscriber } = WhisperRN as {
+  initWhisper: (options: { filePath: string }) => Promise<WhisperContext>;
+  RealtimeTranscriber: new (options: any) => RealtimeTranscriberInstance;
+};
 
 // --- SILENCE LOGS ---
 LogBox.ignoreLogs(['transcribeRealtime', 'Falling back', 'statusBarTranslucent']);
@@ -43,15 +61,15 @@ export default function Transcription() {
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("Initializing...");
 
-  const realtimeRef = useRef<any>(null);
+  const realtimeRef = useRef<RealtimeTranscriberInstance | null>(null);
   const stopLegacyRef = useRef<(() => Promise<void>) | null>(null);
-  const whisperContextRef = useRef<any>(null);
+  const whisperContextRef = useRef<WhisperContext | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const wsRef = useRef<WebSocket | null>(null);
   
   const lastSentTextRef = useRef("");
   const currentTextRef = useRef("");
-  const silenceTimerRef = useRef<any>(null);
+  const silenceTimerRef = useRef<number | null>(null);
   const lastFinalizedTextRef = useRef("");
   const sessionPrefixRef = useRef("");
 
@@ -79,6 +97,17 @@ export default function Transcription() {
   const speakText = (text: string) => {
     Speech.stop(); 
     Speech.speak(text, { language: selectedLanguage === 'ar' ? 'ar-SA' : 'en-US', pitch: 1.0, rate: 0.9 });
+  };
+
+  const handleKeyboardPress = () => {
+    setMessages([]);
+    setCurrentText("");
+    lastFinalizedTextRef.current = "";
+    sessionPrefixRef.current = "";
+    lastSentTextRef.current = "";
+    if (connectedDevice) {
+      sendData("cmd:clear"); // Send command to clear glasses LCD
+    }
   };
 
   const stopRecordingSession = async () => {
@@ -116,15 +145,15 @@ export default function Transcription() {
       const lang = await AsyncStorage.getItem('language');
       const model = await AsyncStorage.getItem('model');
       const remote = await AsyncStorage.getItem('isRemote');
-      const url = await AsyncStorage.getItem('serverUrl');
+      const savedIp = await AsyncStorage.getItem('serverIp');
+      const savedPort = await AsyncStorage.getItem('serverPort');
 
       if (lang) setSelectedLanguage(lang);
       if (remote) setIsRemote(remote === 'true');
       
-      let finalUrl = url || 'ws://192.168.1.100:3000/ws';
-      if (finalUrl && !finalUrl.startsWith('ws://') && !finalUrl.startsWith('wss://')) {
-        finalUrl = 'ws://' + finalUrl;
-      }
+      const ip = savedIp || '192.168.1.100';
+      const port = savedPort || '3000';
+      const finalUrl = `ws://${ip}:${port}/ws`;
       setServerUrl(finalUrl);
       
       const defaultModel = remote === 'true' ? 'small' : 'tiny.en';
@@ -207,7 +236,7 @@ export default function Transcription() {
             setTimeout(() => { toggleRecording(); }, 300);
           }
         }
-      }, 2000);
+      }, 2000) as unknown as number;
     }
   };
 
@@ -254,11 +283,11 @@ export default function Transcription() {
             ws.send(JSON.stringify({ type: "reset" }));
             
             try {
-              LiveAudioStream.init({ sampleRate: 16000, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 4096 });
+              LiveAudioStream.init({ sampleRate: 16000, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 4096, wavFile: "" });
               LiveAudioStream.on('data', (d) => {
                 if (ws && ws.readyState === WebSocket.OPEN) {
                   const b = Buffer.from(d, 'base64');
-                  ws.send(b.buffer.slice(b.offset, b.offset + b.byteLength));
+                  ws.send(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
                 }
               });
               LiveAudioStream.start();
@@ -344,7 +373,7 @@ export default function Transcription() {
           {connectedDevice && (
             <View style={[styles.statusBadge, { backgroundColor: '#E8F5E9' }]}>
               <View style={[styles.statusDot, { backgroundColor: '#34C759' }]} />
-              <Text style={[styles.statusBadgeText, { color: '#34C759' }]}>Hardware</Text>
+              <Text style={[styles.statusBadgeText, { color: '#34C759' }]}>CONNECTED</Text>
             </View>
           )}
         </View>
@@ -396,8 +425,8 @@ export default function Transcription() {
       </View>
 
       <View style={styles.footer}>
-          <Pressable style={styles.footerIconButton} onPress={() => router.push('/settings')}>
-             <KeyboardIcon width={24} height={24} color="#1A1A1A" />
+          <Pressable style={styles.footerIconButton} onPress={handleKeyboardPress}>
+             <ClearIcon width={24} height={24} color="#1A1A1A" />
           </Pressable>
           <View style={styles.waveformContainer}>
              <WaveformIcon color={isRecording ? "#FF3B30" : "#007AFF"} />

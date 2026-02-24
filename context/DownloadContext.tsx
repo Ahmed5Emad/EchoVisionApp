@@ -111,20 +111,27 @@ export const DownloadProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     try {
+      const notificationContent: Notifications.NotificationContentInput = {
+        title,
+        body,
+        data: { progress: Math.round(progress * 100), status, modelId },
+        sound: false,
+        vibrate: [],
+      };
+
+      if (Platform.OS === 'android') {
+        notificationContent.color = '#007AFF';
+        // @ts-ignore - channelId is supported on Android but might not be in the base type depending on expo-notifications version
+        notificationContent.android = {
+          channelId: 'download-progress-quiet',
+          sticky: status === 'downloading' || status === 'paused',
+        };
+      }
+
       await Notifications.scheduleNotificationAsync({
         identifier: NOTIFICATION_ID,
-        content: {
-          title,
-          body,
-          autoDismiss: status === 'completed' || status === 'failed',
-          sticky: status === 'downloading' || status === 'paused',
-          data: { progress: Math.round(progress * 100), status, modelId },
-          // @ts-ignore
-          channelId: 'download-progress-quiet',
-          sound: false,
-          vibrate: [],
-        },
-        trigger: null, // trigger: null means show immediately
+        content: notificationContent,
+        trigger: null,
       });
     } catch (e) {
       console.error('Failed to update notification', e);

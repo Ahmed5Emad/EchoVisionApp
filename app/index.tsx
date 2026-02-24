@@ -6,7 +6,7 @@ import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   SettingsIcon, 
-  UserGuideIcon,
+  QuestionMarkIcon,
   ServerIcon
 } from "../components/Icons";
 import { useBluetooth } from "../context/BluetoothContext";
@@ -27,7 +27,9 @@ export default function Index() {
   const { downloadedModels } = useDownload();
   const [activeModel, setActiveModel] = useState('');
   const [isRemote, setIsRemote] = useState(false);
-  const [serverUrl, setServerUrl] = useState('ws://192.168.1.100:3000/ws');
+  const [serverAddress, setServerAddress] = useState('192.168.1.100:3000');
+  const [serverStatus, setServerStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -41,11 +43,59 @@ export default function Index() {
       const remote = await AsyncStorage.getItem('isRemote');
       if (remote) setIsRemote(remote === 'true');
       
-      const url = await AsyncStorage.getItem('serverUrl');
-      if (url) setServerUrl(url || 'ws://192.168.1.100:3000/ws');
+      const savedIp = await AsyncStorage.getItem('serverIp');
+      const savedPort = await AsyncStorage.getItem('serverPort');
+      if (savedIp && savedPort) {
+        setServerAddress(`${savedIp}:${savedPort}`);
+      } else if (savedIp) {
+        setServerAddress(`${savedIp}:3000`);
+      }
     } catch (e) {
       console.error("Failed to load settings", e);
     }
+  };
+
+  const connectToServer = () => {
+    if (!serverAddress) return;
+    
+    setServerStatus('connecting');
+    
+    // Parse IP and Port
+    let ip = serverAddress;
+    let port = '3000';
+    
+    if (serverAddress.includes(':')) {
+      [ip, port] = serverAddress.split(':');
+    }
+
+    const wsUrl = `ws://${ip}:${port}/ws`;
+    
+    const ws = new WebSocket(wsUrl);
+    
+    const timeout = setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        ws.close();
+        setServerStatus('failed');
+      }
+    }, 5000);
+
+    ws.onopen = async () => {
+      clearTimeout(timeout);
+      setServerStatus('connected');
+      await AsyncStorage.setItem('serverUrl', wsUrl);
+      await AsyncStorage.setItem('serverIp', ip);
+      await AsyncStorage.setItem('serverPort', port);
+      ws.close(); // Close after check
+    };
+
+    ws.onerror = (e) => {
+      clearTimeout(timeout);
+      setServerStatus('failed');
+    };
+  };
+
+  const disconnectServer = () => {
+    setServerStatus('disconnected');
   };
 
   const selectActiveModel = async (modelName: string) => {
@@ -55,17 +105,16 @@ export default function Index() {
 
   const toggleRemote = async (val: boolean) => {
     setIsRemote(val);
+    if (!val) setServerStatus('disconnected');
     await AsyncStorage.setItem('isRemote', val.toString());
   };
 
-  const saveServerUrl = async (url: string) => {
-    let cleanUrl = url.trim();
-    if (cleanUrl && !cleanUrl.startsWith('ws://') && !cleanUrl.startsWith('wss://') && !cleanUrl.startsWith('http')) {
-      cleanUrl = 'ws://' + cleanUrl;
-    }
-    setServerUrl(cleanUrl);
-    await AsyncStorage.setItem('serverUrl', cleanUrl);
+  const updateServerAddress = async (addr: string) => {
+    setServerAddress(addr);
+    setServerStatus('disconnected');
   };
+
+  const isReadyToStart = true; // Connection checker removed as requested
 
   return (
     <View style={styles.container}>
@@ -77,7 +126,7 @@ export default function Index() {
             onPress={() => router.push('/user_guide' as any)} 
             style={styles.iconButton}
           >
-            <UserGuideIcon width={22} height={22} color="#1A1A1A" />
+            <QuestionMarkIcon width={22} height={22} color="#1A1A1A" />
           </Pressable>
           <Pressable 
             onPress={() => router.push('/settings' as any)} 
@@ -90,52 +139,9 @@ export default function Index() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* --- Cloud Processing Section --- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>TRANSCRIPTION ENGINE</Text>
-          <View style={styles.card}>
-              <View style={styles.optionItemNoBorder}>
-                <View style={styles.row}>
-                  <View style={[styles.iconBox, {backgroundColor: '#E0EEFF'}]}>
-                    <ServerIcon width={20} height={20} color="#007AFF" />
-                  </View>
-                  <View style={{ marginLeft: 12 }}>
-                    <Text style={styles.optionTextBold}>Cloud Processing</Text>
-                    <Text style={styles.subText}>{isRemote ? 'Enabled' : 'Local Only'}</Text>
-                  </View>
-                </View>
-                <Switch 
-                  value={isRemote} 
-                  onValueChange={toggleRemote}
-                  trackColor={{ false: "#D1D1D1", true: "#007AFF" }}
-                  thumbColor="#FFF"
-                />
-              </View>
-
-              {isRemote && (
-                <View style={styles.serverInputWrapper}>
-                  <Text style={styles.inputLabel}>WebSocket Endpoint</Text>
-                  <TextInput
-                    style={styles.serverInput}
-                    value={serverUrl}
-                    onChangeText={saveServerUrl}
-                    placeholder="ws://192.168.1.100:3000/ws"
-                    placeholderTextColor="#C7C7CC"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <View style={styles.serverStatusInfo}>
-                    <View style={[styles.statusDot, {backgroundColor: '#34C759'}]} />
-                    <Text style={styles.serverStatusText}>Ready to connect</Text>
-                  </View>
-                </View>
-              )}
-          </View>
-        </View>
-
         {/* --- Bluetooth Connection Section --- */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>HARDWARE CONNECTION</Text>
+          <Text style={styles.sectionLabel}>CONNECT TO GLASSES</Text>
           <View style={styles.card}>
             <View style={styles.statusRow}>
               <View style={styles.statusInfo}>
@@ -180,36 +186,111 @@ export default function Index() {
           </View>
         </View>
 
-        {/* --- Local Model Selection Section --- */}
+        {/* --- Transcription Engine Section --- */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>LOCAL MODELS</Text>
+          <Text style={styles.sectionLabel}>TRANSCRIPTION ENGINE</Text>
           <View style={styles.card}>
-            {downloadedModels.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No local models found.</Text>
-                <Pressable onPress={() => router.push('/settings' as any)}>
-                   <Text style={styles.linkText}>Go to Downloads →</Text>
-                </Pressable>
+              <View style={styles.optionItemNoBorder}>
+                <View style={styles.row}>
+                  <View style={[styles.iconBox, {backgroundColor: '#E0EEFF'}]}>
+                    <ServerIcon width={20} height={20} color="#007AFF" />
+                  </View>
+                  <View style={{ marginLeft: 12 }}>
+                    <Text style={styles.optionTextBold}>Cloud Processing</Text>
+                    <Text style={styles.subText}>{isRemote ? 'Cloud Bridge Active' : 'Local Engine'}</Text>
+                  </View>
+                </View>
+                <Switch 
+                  value={isRemote} 
+                  onValueChange={toggleRemote}
+                  trackColor={{ false: "#D1D1D1", true: "#007AFF" }}
+                  thumbColor="#FFF"
+                />
               </View>
-            ) : (
-              <View style={styles.modelList}>
-                {downloadedModels.map((m) => {
-                  const isActive = activeModel === m;
-                  return (
+
+              {isRemote ? (
+                <View style={styles.serverInputWrapper}>
+                  <Text style={styles.inputLabel}>Server Address</Text>
+                  <View style={styles.addressInputRow}>
+                    <TextInput
+                      style={styles.addressInput}
+                      value={serverAddress}
+                      onChangeText={updateServerAddress}
+                      placeholder="192.168.1.100:3000"
+                      placeholderTextColor="#AEAEB2"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
                     <Pressable 
-                      key={m} 
-                      style={[styles.modelRow, isActive && styles.activeModelRow]}
-                      onPress={() => selectActiveModel(m)}
+                      onPress={serverStatus === 'connected' ? disconnectServer : connectToServer} 
+                      style={[
+                        styles.checkServerBtn, 
+                        serverStatus === 'connected' && styles.connectedBtn,
+                        serverStatus === 'connecting' && { opacity: 0.7 }
+                      ]}
+                      disabled={serverStatus === 'connecting'}
                     >
-                      <Text style={[styles.modelText, isActive && styles.activeModelText]}>
-                        {m}
-                      </Text>
-                      {isActive && <View style={styles.checkIcon} />}
+                       {serverStatus === 'connecting' ? (
+                         <ActivityIndicator size="small" color="#FFF" />
+                       ) : (
+                         <Text style={styles.checkBtnText}>
+                           {serverStatus === 'connected' ? 'Reset' : 'Check'}
+                         </Text>
+                       )}
                     </Pressable>
-                  );
-                })}
-              </View>
-            )}
+                  </View>
+                  <View style={styles.serverStatusInfo}>
+                    <View style={[styles.statusDot, {backgroundColor: serverStatus === 'connected' ? '#34C759' : serverStatus === 'connecting' ? '#FFCC00' : serverStatus === 'failed' ? '#FF3B30' : '#8E8E93'}]} />
+                    <Text style={styles.serverStatusText}>
+                      {serverStatus === 'connected' ? 'Server Reachable' : serverStatus === 'connecting' ? 'Verifying...' : serverStatus === 'failed' ? 'Cannot Reach Server' : 'Not Verified'}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={[styles.localModelsWrapper, { marginTop: 20, paddingTop: 20 }]}>
+                   <View style={styles.rowBetween}>
+                     <Text style={styles.inputLabel}>Selected Model</Text>
+                     <Pressable onPress={() => router.push('/settings' as any)}>
+                        <Text style={styles.manageLink}>Manage Models</Text>
+                     </Pressable>
+                   </View>
+                   {downloadedModels.length === 0 ? (
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>No local models downloaded yet.</Text>
+                    </View>
+                  ) : (
+                    <View>
+                      <Pressable 
+                        style={styles.dropdownButton}
+                        onPress={() => setIsDropdownOpen(!isDropdownOpen)}
+                      >
+                        <Text style={styles.dropdownButtonText}>{activeModel || "Choose a model..."}</Text>
+                        <View style={[styles.dropdownArrow, isDropdownOpen && { transform: [{ rotate: '225deg' }, { translateY: -2 }, { translateX: -2 }] }]} />
+                      </Pressable>
+
+                      {isDropdownOpen && (
+                        <View style={styles.dropdownList}>
+                          {downloadedModels.map((m) => (
+                            <Pressable 
+                              key={m} 
+                              style={[styles.dropdownItem, activeModel === m && styles.activeDropdownItem]}
+                              onPress={() => {
+                                selectActiveModel(m);
+                                setIsDropdownOpen(false);
+                              }}
+                            >
+                              <Text style={[styles.dropdownItemText, activeModel === m && styles.activeDropdownItemText]}>
+                                {m}
+                              </Text>
+                              {activeModel === m && <View style={styles.checkIcon} />}
+                            </Pressable>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
           </View>
         </View>
 
@@ -293,6 +374,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 10,
     elevation: 3,
+    zIndex: 1, // Ensure the card is above other content for dropdown
+    position: 'relative', // Set position for absolute children
   },
   row: { flexDirection: 'row', alignItems: 'center' },
   iconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
@@ -300,11 +383,49 @@ const styles = StyleSheet.create({
   subText: { fontSize: 13, color: "#8E8E93", fontWeight: "500", marginTop: 1 },
   optionItemNoBorder: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   serverInputWrapper: { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#F2F2F7' },
-  inputLabel: { fontSize: 12, fontWeight: "800", color: "#8E8E93", marginBottom: 8, marginLeft: 2 },
-  serverInput: { backgroundColor: "#F2F2F7", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: "#1A1A1A", fontWeight: "600", borderWidth: 1, borderColor: '#E5E5EA' },
-  serverStatusInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 10, marginLeft: 4 },
+  inputLabel: { fontSize: 12, fontWeight: "800", color: "#8E8E93", marginBottom: 8, marginLeft: 2, textAlign: 'left', textTransform: 'uppercase', letterSpacing: 0.5 },
+  addressInputRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 4 },
+  addressInput: { 
+    backgroundColor: "#F2F2F7", 
+    borderRadius: 14, 
+    paddingHorizontal: 16, 
+    height: 54, 
+    fontSize: 15, 
+    color: "#1A1A1A", 
+    fontWeight: "600", 
+    borderWidth: 1.5, 
+    borderColor: '#E5E5EA', 
+    flex: 1 
+  },
+  checkServerBtn: { 
+    backgroundColor: '#007AFF', 
+    paddingHorizontal: 20, 
+    height: 54, 
+    borderRadius: 14, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    minWidth: 90,
+    shadowColor: "#007AFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4
+  },
+  connectedBtn: {
+    backgroundColor: '#F2F2F7',
+    borderColor: '#E5E5EA',
+    borderWidth: 1.5,
+    shadowOpacity: 0,
+    elevation: 0
+  },
+  checkBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
+  serverStatusInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 14, marginLeft: 4 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  serverStatusText: { fontSize: 12, color: "#8E8E93", fontWeight: "600" },
+  serverStatusText: { fontSize: 13, color: "#8E8E93", fontWeight: "600" },
+  localModelsWrapper: {
+    borderTopWidth: 1,
+    borderTopColor: '#F2F2F7',
+  },
   cardContainer: {
     position: 'relative',
   },
@@ -384,6 +505,74 @@ const styles = StyleSheet.create({
     borderColor: '#C7C7CC',
     transform: [{ rotate: '45deg' }],
   },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F2F2F7',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    marginTop: 10,
+  },
+  dropdownButtonText: {
+    fontSize: 15,
+    color: '#1A1A1A',
+    fontWeight: '500',
+  },
+  dropdownArrow: {
+    width: 8,
+    height: 8,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderColor: '#C7C7CC',
+    transform: [{ rotate: '45deg' }],
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  manageLink: {
+    fontSize: 12,
+    color: '#007AFF',
+    fontWeight: '700',
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: 60, // Position it below the button within the card
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    maxHeight: 200, // Adjust as needed
+    overflow: 'hidden',
+    zIndex: 10,
+  },
+  dropdownItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F7',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  activeDropdownItem: {
+    backgroundColor: '#F0F7FF',
+  },
+  dropdownItemText: {
+    fontSize: 15,
+    color: '#48484A',
+    fontWeight: '500',
+  },
+  activeDropdownItemText: {
+    fontWeight: '700',
+    color: '#007AFF',
+  },
   modelList: {
     flexDirection: 'column',
     gap: 10,
@@ -455,6 +644,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 6,
+  },
+  primaryButtonDisabled: {
+    backgroundColor: '#D1D1D6',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   primaryButtonText: {
     fontSize: 18,

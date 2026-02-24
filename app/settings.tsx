@@ -122,7 +122,7 @@ export default function Settings() {
   };
 
   const availableQuants = QUANT_OPTIONS[selType === 'en' ? `${selFamily}.en` : selFamily] || ['standard'];
-  const isDownloadingThis = downloadState.modelId === currentCombination;
+  const currentTask = downloadState.modelId === currentCombination ? downloadState : null;
 
   return (
     <View style={styles.container}>
@@ -135,9 +135,10 @@ export default function Settings() {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-        {/* --- Display Controls Section --- */}
+        {/* --- Screen Control Section --- */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>HARDWARE DISPLAY</Text>
+          <Text style={styles.sectionLabel}>SCREEN CONTROL</Text>
+          
           <View style={styles.card}>
                 <View style={styles.controlsRow}>
                   <Pressable 
@@ -180,67 +181,75 @@ export default function Settings() {
                     {isBrightness ? <BrightnessIcon width={22} height={22} color="#8E8E93" /> : <Text style={[styles.scaleIcon, {fontSize: 20}]}>A</Text>}
                   </View>
                 </View>
-          </View>
-        </View>
 
-        {/* Localization */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>LOCALIZATION</Text>
-          <View style={styles.card}>
-              {LANGUAGES.map((lang, idx) => (
-                <Pressable key={lang.id} style={[styles.optionItem, idx === LANGUAGES.length-1 && {borderBottomWidth:0}]} onPress={() => saveLanguage(lang.id)}>
-                  <Text style={[styles.optionText, selectedLanguage === lang.id && styles.selectedText]}>{lang.name}</Text>
-                  {selectedLanguage === lang.id && <CheckIcon width={18} height={18} color={activeColor} />}
-                </Pressable>
-              ))}
+                <View style={styles.divider} />
+
+                <Text style={styles.sliderLabel}>Language</Text>
+                <View style={[styles.chipContainer, { marginBottom: 0, marginTop: 12 }]}>
+                  {LANGUAGES.map((lang) => (
+                    <Pressable 
+                      key={lang.id} 
+                      onPress={() => saveLanguage(lang.id)} 
+                      style={[styles.chip, selectedLanguage === lang.id && styles.activeChip]}
+                    >
+                      <Text style={[styles.chipText, selectedLanguage === lang.id && styles.activeChipText]}>{lang.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
           </View>
         </View>
 
         {/* Model Builder */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>LOCAL MODEL BUILDER</Text>
-          <Text style={styles.subLabel}>Architecture</Text>
-          <View style={styles.chipContainer}>
-            {MODEL_FAMILIES.map(f => (
-              <Pressable key={f.id} onPress={() => setSelFamily(f.id)} style={[styles.chip, selFamily === f.id && styles.activeChip]}>
-                <Text style={[styles.chipText, selFamily === f.id && styles.activeChipText]}>{f.name}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {MODEL_FAMILIES.find(f => f.id === selFamily)?.hasEn && (
-            <>
-              <Text style={styles.subLabel}>Type</Text>
-              <View style={styles.chipContainer}>
-                <Pressable onPress={() => setSelType('en')} style={[styles.chip, selType === 'en' && styles.activeChip]}><Text style={[styles.chipText, selType === 'en' && styles.activeChipText]}>English</Text></Pressable>
-                <Pressable onPress={() => setSelType('multilingual')} style={[styles.chip, selType === 'multilingual' && styles.activeChip]}><Text style={[styles.chipText, selType === 'multilingual' && styles.activeChipText]}>Multilingual</Text></Pressable>
+          <Text style={styles.sectionLabel}>OFFLINE MODEL SETUP</Text>
+          <View style={styles.card}>
+              <Text style={styles.configLabel}>Model Type</Text>
+              <View style={styles.configChipGroup}>
+                {MODEL_FAMILIES.map(f => (
+                  <Pressable key={f.id} onPress={() => setSelFamily(f.id)} style={[styles.configChip, selFamily === f.id && styles.activeConfigChip]}>
+                    <Text style={[styles.configChipText, selFamily === f.id && styles.activeConfigChipText]}>{f.name}</Text>
+                  </Pressable>
+                ))}
               </View>
-            </>
-          )}
-          <View style={[styles.card, { marginTop: 15, backgroundColor: '#FFFFFF', borderStyle: 'dashed' }]}>
-              <View style={styles.statusInfoCenter}>
-                <Text style={styles.currentModelLabel}>Identifier</Text>
-                <Text style={styles.currentModelName}>{currentCombination}</Text>
-                <Text style={styles.sizeText}>≈ {estSize} MB</Text>
-              </View>
-              {isDownloadingThis || (downloadState.isPaused && downloadState.modelId === currentCombination) ? (
-                <View style={styles.downloadProgressCard}>
-                  <View style={styles.progressRow}>
-                    <ActivityIndicator color={activeColor} size="small" />
-                    <Text style={styles.progressText}>{Math.round(downloadState.progress * 100)}%</Text>
-                  </View>
-                  <View style={styles.downloadButtons}>
-                    <Pressable onPress={downloadState.isPaused ? resumeDownload : pauseDownload} style={styles.actionIconButton}>
-                      {downloadState.isPaused ? <PlayIcon width={20} height={20} color={activeColor} /> : <PauseIcon width={20} height={20} color={activeColor} />}
+
+              {MODEL_FAMILIES.find(f => f.id === selFamily)?.hasEn && (
+                <>
+                  <Text style={styles.configLabel}>Model Language</Text>
+                  <View style={styles.configChipGroup}>
+                    <Pressable onPress={() => setSelType('en')} style={[styles.configChip, selType === 'en' && styles.activeConfigChip]}>
+                      <Text style={[styles.configChipText, selType === 'en' && styles.activeConfigChipText]}>English Only</Text>
                     </Pressable>
-                    <Pressable onPress={cancelDownload} style={styles.actionIconButton}><CloseIcon width={20} height={20} color="#FF3B30" /></Pressable>
+                    <Pressable onPress={() => setSelType('multilingual')} style={[styles.configChip, selType === 'multilingual' && styles.activeConfigChip]}>
+                      <Text style={[styles.configChipText, selType === 'multilingual' && styles.activeConfigChipText]}>Multilingual</Text>
+                    </Pressable>
                   </View>
+                </>
+              )}
+
+              <View style={styles.modelPreviewBox}>
+                <View>
+                  <Text style={styles.previewLabel}>Model</Text>
+                  <Text style={styles.previewValue}>{currentCombination}</Text>
                 </View>
-              ) : isCurrentDownloaded ? (
-                <View style={styles.downloadedBadge}><CheckIcon color={activeColor} width={16} height={16} /><Text style={styles.downloadedBadgeText}>Local Copy Ready</Text></View>
+                <View style={styles.sizeBadge}>
+                   <Text style={styles.sizeBadgeText}>{estSize} MB</Text>
+                </View>
+              </View>
+
+              {isCurrentDownloaded ? (
+                <View style={styles.readyBadge}>
+                   <CheckIcon color="#34C759" width={18} height={18} />
+                   <Text style={styles.readyBadgeText}>Already in Storage</Text>
+                </View>
+              ) : currentTask ? (
+                <View style={styles.readyBadge}>
+                   <ActivityIndicator color={activeColor} size="small" />
+                   <Text style={[styles.readyBadgeText, {color: activeColor}]}>{currentTask.isPaused ? 'Paused' : 'Downloading...'}</Text>
+                </View>
               ) : (
-                <Pressable onPress={() => downloadModel(currentCombination)} style={[styles.downloadAction, downloadState.isDownloading && styles.disabledButton]} disabled={downloadState.isDownloading}>
+                <Pressable onPress={() => downloadModel(currentCombination)} style={styles.downloadPrimaryAction}>
                   <DownloadIcon color="#FFF" width={20} height={20} />
-                  <Text style={styles.downloadActionText}>Download to Device</Text>
+                  <Text style={styles.downloadPrimaryActionText}>Start Download</Text>
                 </Pressable>
               )}
           </View>
@@ -250,7 +259,30 @@ export default function Settings() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>STORAGE MANAGEMENT</Text>
           <View style={styles.card}>
-              {downloadedModels.length === 0 ? <Text style={styles.emptyText}>No models on disk.</Text> :
+              {/* Show Active Download in Storage Management if exists */}
+              {downloadState.modelId && (
+                <View style={[styles.optionItem, downloadedModels.length > 0 && { borderBottomWidth: 1 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.optionText, { color: activeColor }]}>{downloadState.modelId}</Text>
+                    <View style={styles.progressRowStorage}>
+                      <View style={styles.progressBarBg}>
+                         <View style={[styles.progressBarFill, { width: `${downloadState.progress * 100}%` }]} />
+                      </View>
+                      <Text style={styles.progressPercentageText}>{Math.round(downloadState.progress * 100)}%</Text>
+                    </View>
+                  </View>
+                  <View style={styles.downloadButtonsStorage}>
+                    <Pressable onPress={() => downloadState.isPaused ? resumeDownload() : pauseDownload()} style={styles.smallActionBtn}>
+                      {downloadState.isPaused ? <PlayIcon width={16} height={16} color={activeColor} /> : <PauseIcon width={16} height={16} color={activeColor} />}
+                    </Pressable>
+                    <Pressable onPress={() => cancelDownload()} style={styles.smallActionBtn}><CloseIcon width={16} height={16} color="#FF3B30" /></Pressable>
+                  </View>
+                </View>
+              )}
+
+              {downloadedModels.length === 0 && !downloadState.modelId ? (
+                <Text style={styles.emptyText}>No models on disk.</Text>
+              ) : (
                 downloadedModels.map((m, idx) => (
                   <View key={m} style={[styles.optionItem, idx === downloadedModels.length-1 && {borderBottomWidth:0}]}>
                     <View style={styles.modelItemInfo}>
@@ -260,7 +292,7 @@ export default function Settings() {
                     <Pressable onPress={() => handleDeleteModel(m)} style={styles.deleteButton}><TrashIcon width={18} height={18} color="#FF3B30" /></Pressable>
                   </View>
                 ))
-              }
+              )}
           </View>
         </View>
 
@@ -304,6 +336,7 @@ const styles = StyleSheet.create({
   valueBubbleText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   sliderWrapper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   slider: { flex: 1, height: 40 },
+  divider: { height: 1, backgroundColor: '#F2F2F7', marginVertical: 20, width: '100%' },
   scaleIcon: { fontSize: 12, fontWeight: '800', color: '#C7C7CC' },
   optionItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#F2F2F7" },
   optionText: { fontSize: 16, color: "#1A1A1A", fontWeight: "600" },
@@ -313,6 +346,21 @@ const styles = StyleSheet.create({
   activeChip: { backgroundColor: "#007AFF", borderColor: "#007AFF" },
   chipText: { fontSize: 13, color: "#48484A", fontWeight: "600" },
   activeChipText: { color: "#FFF" },
+  configLabel: { fontSize: 11, fontWeight: '800', color: '#8E8E93', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  configChipGroup: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  configChip: { flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: '#F2F2F7', alignItems: 'center', borderWidth: 1.5, borderColor: 'transparent' },
+  activeConfigChip: { backgroundColor: '#FFFFFF', borderColor: '#007AFF', shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+  configChipText: { fontSize: 13, fontWeight: '700', color: '#8E8E93' },
+  activeConfigChipText: { color: '#007AFF' },
+  modelPreviewBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8F9FA', padding: 16, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F2F2F7' },
+  previewLabel: { fontSize: 9, fontWeight: '900', color: '#AEAEB2', letterSpacing: 1, marginBottom: 2 },
+  previewValue: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
+  sizeBadge: { backgroundColor: '#E5E5EA', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  sizeBadgeText: { fontSize: 12, fontWeight: '800', color: '#48484A' },
+  downloadPrimaryAction: { backgroundColor: '#1A1A1A', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 14, gap: 10 },
+  downloadPrimaryActionText: { color: '#FFF', fontWeight: '800', fontSize: 15 },
+  readyBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 54 },
+  readyBadgeText: { fontSize: 15, fontWeight: '800', color: '#34C759' },
   statusInfoCenter: { alignItems: 'center', marginBottom: 15 },
   currentModelLabel: { fontSize: 11, fontWeight: '800', color: "#8E8E93", textTransform: 'uppercase' },
   currentModelName: { fontSize: 18, fontWeight: "800", color: "#1A1A1A" },
@@ -327,6 +375,12 @@ const styles = StyleSheet.create({
   actionIconButton: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E5E5' },
   downloadedBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 },
   downloadedBadgeText: { color: '#007AFF', fontWeight: '800', fontSize: 14 },
+  progressRowStorage: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
+  progressBarBg: { flex: 1, height: 6, backgroundColor: '#F2F2F7', borderRadius: 3, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: '#007AFF' },
+  progressPercentageText: { fontSize: 12, fontWeight: '700', color: '#8E8E93', minWidth: 35 },
+  downloadButtonsStorage: { flexDirection: 'row', gap: 8, marginLeft: 12 },
+  smallActionBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F8F9FA', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E5E5E5' },
   modelItemInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   deleteButton: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF1F0' },
   emptyText: { textAlign: 'center', color: "#8E8E93", fontSize: 14, fontWeight: "500" },
