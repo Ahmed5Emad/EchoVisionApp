@@ -37,7 +37,7 @@ export default function Transcription() {
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [selectedModel, setSelectedModel] = useState('tiny.en');
   const [isRemote, setIsRemote] = useState(false);
-  const [serverUrl, setServerUrl] = useState('');
+  const [serverUrl, setServerUrl] = useState('ws://192.168.1.100:3000/ws');
   const [messages, setMessages] = useState<string[]>([]);
   const [currentText, setCurrentText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -103,7 +103,11 @@ export default function Transcription() {
   const requestMicrophonePermission = async () => {
     try {
       const status = await AudioModule.requestRecordingPermissionsAsync();
-      return status.granted;
+      if (!status.granted) {
+        Alert.alert("Permission Required", "Go to Settings > Apps and enable Microphone access.");
+        return false;
+      }
+      return true;
     } catch (error) { return false; }
   };
 
@@ -116,7 +120,12 @@ export default function Transcription() {
 
       if (lang) setSelectedLanguage(lang);
       if (remote) setIsRemote(remote === 'true');
-      if (url) setServerUrl(url);
+      
+      let finalUrl = url || 'ws://192.168.1.100:3000/ws';
+      if (finalUrl && !finalUrl.startsWith('ws://') && !finalUrl.startsWith('wss://')) {
+        finalUrl = 'ws://' + finalUrl;
+      }
+      setServerUrl(finalUrl);
       
       const defaultModel = remote === 'true' ? 'small' : 'tiny.en';
       if (model) setSelectedModel(model);
@@ -219,40 +228,76 @@ export default function Transcription() {
       setCurrentText(""); lastSentTextRef.current = ""; sessionPrefixRef.current = "";
       try {
         if (isRemote) {
-          if (!serverUrl) { setIsRecording(false); return; }
-          const ws = new WebSocket(serverUrl);
-          wsRef.current = ws;
-                      ws.onopen = () => {
-                      ws.send(JSON.stringify({ type: "set_language", language: selectedLanguage }));
-                      let sm = selectedModel;
-                      const modelMap: Record<string, string> = { 'tiny': 'tiny', 'base': 'base', 'small': 'small' };
-                      const mapped = Object.keys(modelMap).find(k => selectedModel.startsWith(k));
-                      if (mapped) sm = modelMap[mapped];
-                      else if (selectedModel === 'tiny.en' || selectedModel === 'tiny') sm = selectedModel;
-                      else if (selectedModel.startsWith('base')) sm = 'base';
-                      else if (selectedModel.startsWith('small')) sm = 'small';
-                      else sm = 'small';
-                      ws.send(JSON.stringify({ type: "switch_model", model: sm }));
-                      ws.send(JSON.stringify({ type: "reset" }));            LiveAudioStream.init({ sampleRate: 16000, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 4096 });
-            LiveAudioStream.on('data', (d) => {
-              if (ws && ws.readyState === WebSocket.OPEN) {
-                const b = Buffer.from(d, 'base64');
-                ws.send(b.buffer.slice(b.offset, b.offset + b.byteLength));
-              }
-            });
-            LiveAudioStream.start();
+          if (!serverUrl) { 
+            Alert.alert("Error", "Server URL is not configured");
+            setIsRecording(false); 
+            return; 
+          }
+          const trimmedUrl = serverUrl.trim();
+          console.log("Connecting to WebSocket:", trimmedUrl);
+          let ws: WebSocket;
+          try {
+            ws = new WebSocket(trimmedUrl);
+            wsRef.current = ws;
+          } catch (createError: any) {
+            console.error("WebSocket Constructor Error:", createError);
+            Alert.alert("Connection Error", `Could not create WebSocket for ${trimmedUrl}: ${createError.message}`);
+            setIsRecording(false);
+            return;
+          }
+
+          ws.onopen = () => {
+            console.log("WebSocket Connected");
+            ws.send(JSON.stringify({ type: "set_language", language: selectedLanguage }));
+            const sm = 'large-v3';
+            ws.send(JSON.stringify({ type: "switch_model", model: sm }));
+            ws.send(JSON.stringify({ type: "reset" }));
+            
+            try {
+              LiveAudioStream.init({ sampleRate: 16000, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 4096 });
+              LiveAudioStream.on('data', (d) => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                  const b = Buffer.from(d, 'base64');
+                  ws.send(b.buffer.slice(b.offset, b.offset + b.byteLength));
+                }
+              });
+              LiveAudioStream.start();
+            } catch (audioError: any) {
+              console.error("Audio initialization error:", audioError);
+              Alert.alert("Audio Error", "Failed to start microphone streaming.");
+            }
           };
+          
           ws.onmessage = (e) => {
-            const data = JSON.parse(e.data);
-            if (data.type === "partial" || data.type === "final") handleNewTranscription(data.text);
-            else if (data.type === "download_start") setStatus(`Downloading ${data.model}...`);
-            else if (data.type === "download_progress") setStatus(`Downloading ${data.model}: ${Math.round(data.progress)}%`);
-            else if (data.type === "download_complete") setStatus(`Model ready.`);
-            else if (data.type === "switching_model") setStatus(`Switching to ${data.model}...`);
-            else if (data.type === "switched_model") setStatus(`Ready (Remote: ${data.model})`);
-            else if (data.type === "error") setStatus("Server Error");
+            try {
+              const data = JSON.parse(e.data);
+              if (data.type === "partial" || data.type === "final") handleNewTranscription(data.text);
+              else if (data.type === "download_start") setStatus(`Downloading ${data.model}...`);
+              else if (data.type === "download_progress") setStatus(`Downloading ${data.model}: ${Math.round(data.progress)}%`);
+              else if (data.type === "download_complete") setStatus(`Model ready.`);
+              else if (data.type === "switching_model") setStatus(`Switching to ${data.model}...`);
+              else if (data.type === "switched_model") setStatus(`Ready (Remote: ${data.model})`);
+              else if (data.type === "error") {
+                console.error("Server Error:", data.message);
+                setStatus("Server Error");
+              }
+            } catch (parseError) {
+              console.error("Message parse error:", parseError);
+            }
           };
-          ws.onerror = () => { setIsRecording(false); stopRecordingSession(); };
+          
+          ws.onerror = (e: any) => { 
+            console.error("WebSocket Error Object:", e);
+            const errorMsg = e.message || "Connection refused or server unreachable.";
+            Alert.alert("Connection Error", `Failed to connect to ${trimmedUrl}.\n\nReason: ${errorMsg}\n\nCheck if the server is running on the correct IP and port.`);
+            setIsRecording(false); 
+            stopRecordingSession(); 
+          };
+          
+          ws.onclose = (e) => {
+            console.log("WebSocket Closed:", e.code, e.reason);
+            setIsRecording(false);
+          };
         } else if (RealtimeTranscriber) {
            const realtime = new RealtimeTranscriber({
              filePath: modelPath!, language: selectedLanguage, maxLen: 1, beamSize: 1, realtimeAudioSec: 60,
@@ -261,8 +306,24 @@ export default function Transcription() {
            realtime.on('transcribe', (data: any) => { if (data?.result) handleNewTranscription(data.result); });
            await realtime.start();
            realtimeRef.current = realtime;
+        } else if (whisperContextRef.current) {
+           // Fallback to legacy transcribeRealtime if RealtimeTranscriber is not available or fails
+           const options: any = {
+             language: selectedLanguage, maxLen: 1, beamSize: 1, realtimeAudioSec: 60, audioSessionOnStart: true, 
+           };
+           const { stop, subscribe } = await whisperContextRef.current.transcribeRealtime(options);
+           stopLegacyRef.current = stop;
+           subscribe((event: any) => { if (event.data?.result) handleNewTranscription(event.data.result); });
         }
-      } catch (e) { setIsRecording(false); }
+      } catch (e) { 
+        setIsRecording(false);
+        const errStr = String(e);
+        if (errStr.includes("-100")) {
+           Alert.alert("Microphone Error", "Initialization failed (State: -100). This often happens if the microphone is busy. Restart the app.");
+        } else {
+           Alert.alert("Error", "Could not start recording. " + errStr);
+        }
+      }
     }
   };
 

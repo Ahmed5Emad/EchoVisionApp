@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { StyleSheet, View, Text, Pressable, ActivityIndicator, ScrollView } from "react-native";
+import { StyleSheet, View, Text, Pressable, ActivityIndicator, ScrollView, Switch, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   SettingsIcon, 
-  UserGuideIcon
+  UserGuideIcon,
+  ServerIcon
 } from "../components/Icons";
 import { useBluetooth } from "../context/BluetoothContext";
 import { useDownload } from "../context/DownloadContext";
@@ -25,23 +26,45 @@ export default function Index() {
   
   const { downloadedModels } = useDownload();
   const [activeModel, setActiveModel] = useState('');
+  const [isRemote, setIsRemote] = useState(false);
+  const [serverUrl, setServerUrl] = useState('ws://192.168.1.100:3000/ws');
 
   useEffect(() => {
-    loadActiveModel();
+    loadSettings();
   }, []);
 
-  const loadActiveModel = async () => {
+  const loadSettings = async () => {
     try {
       const model = await AsyncStorage.getItem('model');
       if (model) setActiveModel(model);
+      
+      const remote = await AsyncStorage.getItem('isRemote');
+      if (remote) setIsRemote(remote === 'true');
+      
+      const url = await AsyncStorage.getItem('serverUrl');
+      if (url) setServerUrl(url || 'ws://192.168.1.100:3000/ws');
     } catch (e) {
-      console.error("Failed to load active model", e);
+      console.error("Failed to load settings", e);
     }
   };
 
   const selectActiveModel = async (modelName: string) => {
     setActiveModel(modelName);
     await AsyncStorage.setItem('model', modelName);
+  };
+
+  const toggleRemote = async (val: boolean) => {
+    setIsRemote(val);
+    await AsyncStorage.setItem('isRemote', val.toString());
+  };
+
+  const saveServerUrl = async (url: string) => {
+    let cleanUrl = url.trim();
+    if (cleanUrl && !cleanUrl.startsWith('ws://') && !cleanUrl.startsWith('wss://') && !cleanUrl.startsWith('http')) {
+      cleanUrl = 'ws://' + cleanUrl;
+    }
+    setServerUrl(cleanUrl);
+    await AsyncStorage.setItem('serverUrl', cleanUrl);
   };
 
   return (
@@ -67,6 +90,49 @@ export default function Index() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
+        {/* --- Cloud Processing Section --- */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>TRANSCRIPTION ENGINE</Text>
+          <View style={styles.card}>
+              <View style={styles.optionItemNoBorder}>
+                <View style={styles.row}>
+                  <View style={[styles.iconBox, {backgroundColor: '#E0EEFF'}]}>
+                    <ServerIcon width={20} height={20} color="#007AFF" />
+                  </View>
+                  <View style={{ marginLeft: 12 }}>
+                    <Text style={styles.optionTextBold}>Cloud Processing</Text>
+                    <Text style={styles.subText}>{isRemote ? 'Enabled' : 'Local Only'}</Text>
+                  </View>
+                </View>
+                <Switch 
+                  value={isRemote} 
+                  onValueChange={toggleRemote}
+                  trackColor={{ false: "#D1D1D1", true: "#007AFF" }}
+                  thumbColor="#FFF"
+                />
+              </View>
+
+              {isRemote && (
+                <View style={styles.serverInputWrapper}>
+                  <Text style={styles.inputLabel}>WebSocket Endpoint</Text>
+                  <TextInput
+                    style={styles.serverInput}
+                    value={serverUrl}
+                    onChangeText={saveServerUrl}
+                    placeholder="ws://192.168.1.100:3000/ws"
+                    placeholderTextColor="#C7C7CC"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <View style={styles.serverStatusInfo}>
+                    <View style={[styles.statusDot, {backgroundColor: '#34C759'}]} />
+                    <Text style={styles.serverStatusText}>Ready to connect</Text>
+                  </View>
+                </View>
+              )}
+          </View>
+        </View>
+
         {/* --- Bluetooth Connection Section --- */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>HARDWARE CONNECTION</Text>
@@ -102,7 +168,9 @@ export default function Index() {
                     style={styles.deviceItem}
                     onPress={() => connectToDevice(device)}
                   >
-                    <Text style={styles.deviceName}>{device.name || 'Unknown Device'}</Text>
+                    <Text style={device.id === connectedDevice?.id ? styles.activeModelText : styles.deviceName}>
+                      {device.name || 'Unknown Device'}
+                    </Text>
                     <View style={styles.connectChevron} />
                   </Pressable>
                 ))}
@@ -112,9 +180,9 @@ export default function Index() {
           </View>
         </View>
 
-        {/* --- Model Selection Section --- */}
+        {/* --- Local Model Selection Section --- */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>TRANSCRIPTION ENGINE</Text>
+          <Text style={styles.sectionLabel}>LOCAL MODELS</Text>
           <View style={styles.card}>
             {downloadedModels.length === 0 ? (
               <View style={styles.emptyContainer}>
@@ -157,6 +225,8 @@ export default function Index() {
     </View>
   );
 }
+
+
 
 const styles = StyleSheet.create({
   container: {
@@ -213,16 +283,30 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%",
-    borderRadius: 16,
+    borderRadius: 20,
     backgroundColor: "#FFFFFF",
-    padding: 18,
+    padding: 20,
     borderWidth: 1,
     borderColor: "#E5E5E5",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowRadius: 10,
     elevation: 3,
+  },
+  row: { flexDirection: 'row', alignItems: 'center' },
+  iconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  optionTextBold: { fontSize: 16, color: "#1A1A1A", fontWeight: "700" },
+  subText: { fontSize: 13, color: "#8E8E93", fontWeight: "500", marginTop: 1 },
+  optionItemNoBorder: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  serverInputWrapper: { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#F2F2F7' },
+  inputLabel: { fontSize: 12, fontWeight: "800", color: "#8E8E93", marginBottom: 8, marginLeft: 2 },
+  serverInput: { backgroundColor: "#F2F2F7", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: "#1A1A1A", fontWeight: "600", borderWidth: 1, borderColor: '#E5E5EA' },
+  serverStatusInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 10, marginLeft: 4 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  serverStatusText: { fontSize: 12, color: "#8E8E93", fontWeight: "600" },
+  cardContainer: {
+    position: 'relative',
   },
   statusRow: {
     flexDirection: 'row',
@@ -268,7 +352,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   subLabel: {
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: "700",
     color: "#8E8E93",
     marginTop: 15,

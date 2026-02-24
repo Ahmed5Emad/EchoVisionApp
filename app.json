@@ -2,14 +2,14 @@
   "expo": {
     "name": "EchoVision",
     "slug": "EchoVision",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "orientation": "portrait",
-    "icon": "./assets/images/transparent.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "echovision",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/transparent.png",
+      "image": "./assets/images/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#1A1A1A"
     },
@@ -21,18 +21,20 @@
       }
     },
     "android": {
+      "usesCleartextTraffic": true,
       "splash": {
-        "image": "./assets/images/transparent.png",
+        "image": "./assets/images/icon.png",
         "backgroundColor": "#1A1A1A"
       },
       "adaptiveIcon": {
         "backgroundColor": "#1A1A1A",
-        "foregroundImage": "./assets/images/transparent.png"
+        "foregroundImage": "./assets/images/icon.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.EchoVision",
       "permissions": [
+        "INTERNET",
         "RECORD_AUDIO",
         "BLUETOOTH",
         "BLUETOOTH_ADMIN",
@@ -65,7 +67,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/transparent.png",
+          "image": "./assets/images/icon.png",
           "backgroundColor": "#1A1A1A",
           "dark": {
             "backgroundColor": "#1A1A1A"
@@ -76,6 +78,7 @@
         "expo-build-properties",
         {
           "android": {
+            "usesCleartextTraffic": true,
             "extraGradleProps": {
               "org.gradle.daemon": "true",
               "org.gradle.parallel": "true",
@@ -95,9 +98,10 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "e91e6355-a9bf-47f7-a27d-95cbe61734dc"
+        "projectId": "d5101f82-a8b2-4373-a54d-ec82556b9b0d"
       }
-    }
+    },
+    "owner": "ahmed5emad"
   },
   "name": "echovision"
 }

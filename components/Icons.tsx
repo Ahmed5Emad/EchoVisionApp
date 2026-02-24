@@ -183,3 +183,12 @@ export function ServerIcon({ width = 24, height = 24, color = "#424242", style }
     </Svg>
   );
 }
+
+export function LockIcon({ width = 24, height = 24, color = "#424242", style }: IconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 24 24" fill="none" style={style}>
+      <Rect x="3" y="11" width="18" height="11" rx="2" stroke={color} strokeWidth="2" />
+      <Path d="M7 11V7a5 5 0 0 1 10 0v4" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
