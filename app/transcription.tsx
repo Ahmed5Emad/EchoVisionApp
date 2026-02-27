@@ -278,8 +278,6 @@ export default function Transcription() {
           ws.onopen = () => {
             console.log("WebSocket Connected");
             ws.send(JSON.stringify({ type: "set_language", language: selectedLanguage }));
-            const sm = 'large-v3';
-            ws.send(JSON.stringify({ type: "switch_model", model: sm }));
             ws.send(JSON.stringify({ type: "reset" }));
             
             try {
