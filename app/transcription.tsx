@@ -145,16 +145,18 @@ export default function Transcription() {
       const lang = await AsyncStorage.getItem('language');
       const model = await AsyncStorage.getItem('model');
       const remote = await AsyncStorage.getItem('isRemote');
-      const savedIp = await AsyncStorage.getItem('serverIp');
-      const savedPort = await AsyncStorage.getItem('serverPort');
+      const savedServerUrl = await AsyncStorage.getItem('serverUrl');
 
       if (lang) setSelectedLanguage(lang);
       if (remote) setIsRemote(remote === 'true');
       
-      const ip = savedIp || '192.168.1.100';
-      const port = savedPort || '3000';
-      const finalUrl = `ws://${ip}:${port}/ws`;
-      setServerUrl(finalUrl);
+      if (savedServerUrl) {
+        setServerUrl(savedServerUrl);
+      } else {
+        const savedIp = await AsyncStorage.getItem('serverIp') || '192.168.1.100';
+        const savedPort = await AsyncStorage.getItem('serverPort') || '3000';
+        setServerUrl(`ws://${savedIp}:${savedPort}/ws`);
+      }
       
       const defaultModel = remote === 'true' ? 'small' : 'tiny.en';
       if (model) setSelectedModel(model);

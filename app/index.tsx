@@ -27,7 +27,9 @@ export default function Index() {
   const { downloadedModels } = useDownload();
   const [activeModel, setActiveModel] = useState('');
   const [isRemote, setIsRemote] = useState(false);
+  const [remoteType, setRemoteType] = useState<'api' | 'local'>('local');
   const [serverAddress, setServerAddress] = useState('192.168.1.100:3000');
+  const [apiUrl, setApiUrl] = useState('https://unfecundated-nonfenestrated-jena.ngrok-free.dev/');
   const [serverStatus, setServerStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -43,6 +45,12 @@ export default function Index() {
       const remote = await AsyncStorage.getItem('isRemote');
       if (remote) setIsRemote(remote === 'true');
       
+      const savedRemoteType = await AsyncStorage.getItem('remoteType');
+      if (savedRemoteType) setRemoteType(savedRemoteType as 'api' | 'local');
+
+      const savedApiUrl = await AsyncStorage.getItem('apiUrl');
+      if (savedApiUrl) setApiUrl(savedApiUrl);
+
       const savedIp = await AsyncStorage.getItem('serverIp');
       const savedPort = await AsyncStorage.getItem('serverPort');
       if (savedIp && savedPort) {
@@ -56,20 +64,32 @@ export default function Index() {
   };
 
   const connectToServer = () => {
-    if (!serverAddress) return;
-    
     setServerStatus('connecting');
     
-    // Parse IP and Port
-    let ip = serverAddress;
-    let port = '3000';
-    
-    if (serverAddress.includes(':')) {
-      [ip, port] = serverAddress.split(':');
+    let wsUrl = '';
+    let ip = '';
+    let port = '';
+
+    if (remoteType === 'api') {
+      // Convert https to wss for WebSocket connection
+      wsUrl = apiUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+      if (!wsUrl.endsWith('/ws')) {
+        wsUrl = wsUrl.endsWith('/') ? `${wsUrl}ws` : `${wsUrl}/ws`;
+      }
+    } else {
+      if (!serverAddress) {
+        setServerStatus('failed');
+        return;
+      }
+      // Parse IP and Port
+      ip = serverAddress;
+      port = '3000';
+      if (serverAddress.includes(':')) {
+        [ip, port] = serverAddress.split(':');
+      }
+      wsUrl = `ws://${ip}:${port}/ws`;
     }
 
-    const wsUrl = `ws://${ip}:${port}/ws`;
-    
     const ws = new WebSocket(wsUrl);
     
     const timeout = setTimeout(() => {
@@ -83,8 +103,13 @@ export default function Index() {
       clearTimeout(timeout);
       setServerStatus('connected');
       await AsyncStorage.setItem('serverUrl', wsUrl);
-      await AsyncStorage.setItem('serverIp', ip);
-      await AsyncStorage.setItem('serverPort', port);
+      await AsyncStorage.setItem('remoteType', remoteType);
+      if (remoteType === 'local') {
+        await AsyncStorage.setItem('serverIp', ip);
+        await AsyncStorage.setItem('serverPort', port);
+      } else {
+        await AsyncStorage.setItem('apiUrl', apiUrl);
+      }
       ws.close(); // Close after check
     };
 
@@ -112,6 +137,18 @@ export default function Index() {
   const updateServerAddress = async (addr: string) => {
     setServerAddress(addr);
     setServerStatus('disconnected');
+  };
+
+  const updateApiUrl = async (url: string) => {
+    setApiUrl(url);
+    setServerStatus('disconnected');
+    await AsyncStorage.setItem('apiUrl', url);
+  };
+
+  const updateRemoteType = async (type: 'api' | 'local') => {
+    setRemoteType(type);
+    setServerStatus('disconnected');
+    await AsyncStorage.setItem('remoteType', type);
   };
 
   const isReadyToStart = true; // Connection checker removed as requested
@@ -210,13 +247,29 @@ export default function Index() {
 
               {isRemote ? (
                 <View style={styles.serverInputWrapper}>
-                  <Text style={styles.inputLabel}>Server Address</Text>
+                  <Text style={styles.inputLabel}>Connection Type</Text>
+                  <View style={styles.remoteTypeRow}>
+                    <Pressable 
+                      style={[styles.remoteTypeBtn, remoteType === 'api' && styles.remoteTypeBtnActive]} 
+                      onPress={() => updateRemoteType('api')}
+                    >
+                      <Text style={[styles.remoteTypeBtnText, remoteType === 'api' && styles.remoteTypeBtnTextActive]}>Cloud API</Text>
+                    </Pressable>
+                    <Pressable 
+                      style={[styles.remoteTypeBtn, remoteType === 'local' && styles.remoteTypeBtnActive]} 
+                      onPress={() => updateRemoteType('local')}
+                    >
+                      <Text style={[styles.remoteTypeBtnText, remoteType === 'local' && styles.remoteTypeBtnTextActive]}>Local IP</Text>
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.inputLabel}>{remoteType === 'api' ? 'API Endpoint' : 'Server Address'}</Text>
                   <View style={styles.addressInputRow}>
                     <TextInput
                       style={styles.addressInput}
-                      value={serverAddress}
-                      onChangeText={updateServerAddress}
-                      placeholder="192.168.1.100:3000"
+                      value={remoteType === 'api' ? apiUrl : serverAddress}
+                      onChangeText={remoteType === 'api' ? updateApiUrl : updateServerAddress}
+                      placeholder={remoteType === 'api' ? "https://api.example.com" : "192.168.1.100:3000"}
                       placeholderTextColor="#AEAEB2"
                       autoCapitalize="none"
                       autoCorrect={false}
@@ -382,6 +435,11 @@ const styles = StyleSheet.create({
   optionTextBold: { fontSize: 16, color: "#1A1A1A", fontWeight: "700" },
   subText: { fontSize: 13, color: "#8E8E93", fontWeight: "500", marginTop: 1 },
   optionItemNoBorder: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  remoteTypeRow: { flexDirection: 'row', gap: 10, marginBottom: 20, marginTop: 4 },
+  remoteTypeBtn: { flex: 1, height: 44, borderRadius: 12, backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: 'transparent' },
+  remoteTypeBtnActive: { backgroundColor: '#FFFFFF', borderColor: '#007AFF' },
+  remoteTypeBtnText: { fontSize: 14, fontWeight: '700', color: '#8E8E93' },
+  remoteTypeBtnTextActive: { color: '#007AFF' },
   serverInputWrapper: { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#F2F2F7' },
   inputLabel: { fontSize: 12, fontWeight: "800", color: "#8E8E93", marginBottom: 8, marginLeft: 2, textAlign: 'left', textTransform: 'uppercase', letterSpacing: 0.5 },
   addressInputRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 4 },
