@@ -10,6 +10,29 @@ Built with **Expo** and **whisper.rn**, this app performs inference directly on 
 |:---:|:---:|:---:|
 | <img src="Screenshots/Home.jpeg" width="250"> | <img src="Screenshots/Setting.jpeg" width="250"> | <img src="Screenshots/Transcript_page.jpeg" width="250"> |
 
+### Screen Breakdown
+
+**1. Home Screen (Dashboard)**
+- **Connect to Glasses**: Control center for Bluetooth (BLE) devices. Tap **Search** to scan for and connect to external hardware (e.g., Smart Glasses or Linux receiver).
+- **Transcription Engine Options**:
+  - **Local Mode (Cloud Processing OFF)**: Select from downloaded Whisper models to process audio offline directly on your device.
+  - **Cloud Mode (Cloud Processing ON)**: Connect to a remote WebSocket server (Local IP or Cloud API) to offload transcription processing.
+- **Start Transcription**: Launches the active recording interface based on your chosen engine and connection status.
+
+**2. Settings Screen (Control & Storage)**
+- **Screen Control**: Features Brightness and Font Size sliders that act as a remote control. Changes instantly send BLE commands to connected Smart Glasses.
+- **Language**: Choose between English and Arabic to configure both the AI model expectations and the Text-to-Speech engine.
+- **Offline Model Setup**: Select model sizes (Tiny, Base, Small) and types (English-only or Multilingual) to download directly from HuggingFace to your device.
+- **Storage Management**: Track active downloads with live progress bars (pause/resume supported) or delete downloaded models to free up phone storage.
+
+**3. Transcription Screen (Live Feed)**
+- **Live Chat Interface**: As you speak, partial/unfinished sentences appear with a loading spinner. Once the AI finalizes the sentence, it becomes a solid text bubble.
+- **Text-to-Speech**: Tap the small speaker icon on any finalized message to have the phone read it aloud.
+- **Action Footer**:
+  - **Clear (Left)**: Wipes the screen history and sends a command to clear the connected glasses display.
+  - **Waveform (Center)**: Turns red indicating the microphone is actively listening.
+  - **Record/Stop (Right)**: Starts and stops the audio capture pipeline.
+
 ## ✨ Key Features
 
 - **On-Device Transcription:** No internet connection required. Fast, accurate, and private (via `whisper.rn`).
