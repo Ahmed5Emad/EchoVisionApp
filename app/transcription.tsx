@@ -49,7 +49,7 @@ console.warn = (...args) => {
 
 export default function Transcription() {
   const router = useRouter();
-  const { connectedDevice, sendData } = useBluetooth();
+  const { connectedDevice, sendData, audioDevice, onAudioData } = useBluetooth();
   const [modelReady, setModelReady] = useState(false);
   const [modelPath, setModelPath] = useState<string | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
@@ -72,6 +72,16 @@ export default function Transcription() {
   const silenceTimerRef = useRef<number | null>(null);
   const lastFinalizedTextRef = useRef("");
   const sessionPrefixRef = useRef("");
+
+  // Bluetooth-audio routing: when the glasses are streaming PCM over RFCOMM
+  // we use that instead of the phone microphone. The local path buffers
+  // ~LOCAL_CHUNK_SEC of audio per call to whisper.rn's transcribe().
+  const btUnsubRef = useRef<(() => void) | null>(null);
+  const btFlushTimerRef = useRef<number | null>(null);
+  const btBufferRef = useRef<Float32Array>(new Float32Array(0));
+  const btTranscribingRef = useRef(false);
+  const LOCAL_CHUNK_SEC = 3;
+  const BT_SAMPLE_RATE = 16000;
 
   useEffect(() => {
     setupApp();
@@ -112,6 +122,13 @@ export default function Transcription() {
 
   const stopRecordingSession = async () => {
     try {
+      if (btUnsubRef.current) { btUnsubRef.current(); btUnsubRef.current = null; }
+      if (btFlushTimerRef.current) {
+        clearInterval(btFlushTimerRef.current);
+        btFlushTimerRef.current = null;
+      }
+      btBufferRef.current = new Float32Array(0);
+      btTranscribingRef.current = false;
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -127,6 +144,63 @@ export default function Transcription() {
         stopLegacyRef.current = null;
       }
     } catch (e) { }
+  };
+
+  // 44-byte WAV header + interleaved PCM16 for whisper.rn's transcribe().
+  const encodeWavPcm16 = (samples: Float32Array, sampleRate: number): Buffer => {
+    const dataSize = samples.length * 2;
+    const buf = Buffer.alloc(44 + dataSize);
+    buf.write('RIFF', 0);
+    buf.writeUInt32LE(36 + dataSize, 4);
+    buf.write('WAVE', 8);
+    buf.write('fmt ', 12);
+    buf.writeUInt32LE(16, 16);
+    buf.writeUInt16LE(1, 20);            // PCM
+    buf.writeUInt16LE(1, 22);            // mono
+    buf.writeUInt32LE(sampleRate, 24);
+    buf.writeUInt32LE(sampleRate * 2, 28);
+    buf.writeUInt16LE(2, 32);
+    buf.writeUInt16LE(16, 34);
+    buf.write('data', 36);
+    buf.writeUInt32LE(dataSize, 40);
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      buf.writeInt16LE(s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff), 44 + i * 2);
+    }
+    return buf;
+  };
+
+  // Save a buffered chunk, transcribe it via whisper.rn, hand result to the
+  // normal handleNewTranscription path. Inflight guard avoids overlapping jobs.
+  const transcribeBtChunk = async (chunk: Float32Array) => {
+    if (!whisperContextRef.current) return;
+    if (btTranscribingRef.current) return;
+    btTranscribingRef.current = true;
+    let path: string | null = null;
+    try {
+      const FS = FileSystem;
+      const dir = FS.cacheDirectory ?? FS.documentDirectory;
+      if (!dir) return;
+      path = `${dir}bt-chunk-${Date.now()}.wav`;
+      const wav = encodeWavPcm16(chunk, BT_SAMPLE_RATE);
+      await FS.writeAsStringAsync(path, wav.toString('base64'), {
+        encoding: FS.EncodingType.Base64,
+      });
+      const job: any = (whisperContextRef.current as any).transcribe(path, {
+        language: selectedLanguage,
+        beamSize: 1,
+      });
+      const result = await (job?.promise ?? job);
+      const text = (result?.result ?? '').toString().trim();
+      if (text) handleNewTranscription(text);
+    } catch (e) {
+      console.warn('BT chunk transcribe error:', e);
+    } finally {
+      btTranscribingRef.current = false;
+      if (path) {
+        try { await FileSystem.deleteAsync(path, { idempotent: true }); } catch {}
+      }
+    }
   };
 
   const requestMicrophonePermission = async () => {
@@ -253,8 +327,11 @@ export default function Transcription() {
         setCurrentText(""); lastSentTextRef.current = ""; sessionPrefixRef.current = "";
       }
     } else {
-      const hasPermission = await requestMicrophonePermission();
-      if (!hasPermission) return;
+      const useBtAudio = !!audioDevice;
+      if (!useBtAudio) {
+        const hasPermission = await requestMicrophonePermission();
+        if (!hasPermission) return;
+      }
       setIsRecording(true);
       setCurrentText(""); lastSentTextRef.current = ""; sessionPrefixRef.current = "";
       try {
@@ -281,19 +358,28 @@ export default function Transcription() {
             console.log("WebSocket Connected");
             ws.send(JSON.stringify({ type: "set_language", language: selectedLanguage }));
             ws.send(JSON.stringify({ type: "reset" }));
-            
+
             try {
-              LiveAudioStream.init({ sampleRate: 16000, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 4096, wavFile: "" });
-              LiveAudioStream.on('data', (d) => {
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                  const b = Buffer.from(d, 'base64');
-                  ws.send(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
-                }
-              });
-              LiveAudioStream.start();
+              if (useBtAudio) {
+                // Pipe PCM16 received over Bluetooth straight to the server.
+                btUnsubRef.current = onAudioData((pcm) => {
+                  if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength));
+                  }
+                });
+              } else {
+                LiveAudioStream.init({ sampleRate: 16000, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 4096, wavFile: "" });
+                LiveAudioStream.on('data', (d) => {
+                  if (ws && ws.readyState === WebSocket.OPEN) {
+                    const b = Buffer.from(d, 'base64');
+                    ws.send(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+                  }
+                });
+                LiveAudioStream.start();
+              }
             } catch (audioError: any) {
               console.error("Audio initialization error:", audioError);
-              Alert.alert("Audio Error", "Failed to start microphone streaming.");
+              Alert.alert("Audio Error", "Failed to start audio streaming.");
             }
           };
           
@@ -327,6 +413,26 @@ export default function Transcription() {
             console.log("WebSocket Closed:", e.code, e.reason);
             setIsRecording(false);
           };
+        } else if (useBtAudio && whisperContextRef.current) {
+           // Local Whisper fed from the Bluetooth audio stream: accumulate
+           // PCM samples and flush LOCAL_CHUNK_SEC at a time to transcribe().
+           btBufferRef.current = new Float32Array(0);
+           btUnsubRef.current = onAudioData((pcm) => {
+             const fl = new Float32Array(pcm.length);
+             for (let i = 0; i < pcm.length; i++) fl[i] = pcm[i] / 32768.0;
+             const merged = new Float32Array(btBufferRef.current.length + fl.length);
+             merged.set(btBufferRef.current, 0);
+             merged.set(fl, btBufferRef.current.length);
+             btBufferRef.current = merged;
+           });
+           btFlushTimerRef.current = setInterval(() => {
+             const minSamples = BT_SAMPLE_RATE * LOCAL_CHUNK_SEC;
+             if (btBufferRef.current.length < minSamples) return;
+             if (btTranscribingRef.current) return;
+             const chunk = btBufferRef.current;
+             btBufferRef.current = new Float32Array(0);
+             void transcribeBtChunk(chunk);
+           }, 500) as unknown as number;
         } else if (RealtimeTranscriber) {
            const realtime = new RealtimeTranscriber({
              filePath: modelPath!, language: selectedLanguage, maxLen: 1, beamSize: 1, realtimeAudioSec: 60,
@@ -374,6 +480,12 @@ export default function Transcription() {
             <View style={[styles.statusBadge, { backgroundColor: '#E8F5E9' }]}>
               <View style={[styles.statusDot, { backgroundColor: '#34C759' }]} />
               <Text style={[styles.statusBadgeText, { color: '#34C759' }]}>CONNECTED</Text>
+            </View>
+          )}
+          {audioDevice && (
+            <View style={[styles.statusBadge, { backgroundColor: '#FFF4E0' }]}>
+              <View style={[styles.statusDot, { backgroundColor: '#FF9500' }]} />
+              <Text style={[styles.statusBadgeText, { color: '#FF9500' }]}>BT MIC</Text>
             </View>
           )}
         </View>
