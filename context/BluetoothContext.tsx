@@ -1,13 +1,32 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { BleManager, Device } from 'react-native-ble-plx';
-import { Platform, PermissionsAndroid } from 'react-native';
+import RNBluetoothClassic, {
+  BluetoothDevice as ClassicDevice,
+  BluetoothEventSubscription,
+} from 'react-native-bluetooth-classic';
+import { PermissionsAndroid, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { Buffer } from 'buffer';
 
+// BLE — used to send text to the glasses (HM-10 style serial profile)
 const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
 const CHARACTERISTIC_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
 
+// Classic BT (RFCOMM) — used to receive PCM16 audio from the glasses.
+// The Pi sends a 44-byte WAV header once, then continuous 16 kHz mono PCM16.
+const AUDIO_WAV_HEADER_BYTES = 44;
+
+export type AudioDataCallback = (pcm: Int16Array) => void;
+
 interface BluetoothContextType {
+  // BLE — text → glasses
   isScanning: boolean;
   devices: Device[];
   connectedDevice: Device | null;
@@ -16,6 +35,16 @@ interface BluetoothContextType {
   connectToDevice: (device: Device) => Promise<Device | null>;
   disconnect: () => Promise<void>;
   sendData: (data: string) => Promise<void>;
+
+  // Classic BT — audio ← glasses
+  pairedAudioDevices: ClassicDevice[];
+  audioDevice: ClassicDevice | null;
+  isAudioStreaming: boolean;
+  refreshPairedAudioDevices: () => Promise<void>;
+  connectAudioDevice: (device: ClassicDevice) => Promise<boolean>;
+  disconnectAudio: () => Promise<void>;
+  /** Subscribe to PCM16 mono 16 kHz chunks. Returns an unsubscribe fn. */
+  onAudioData: (cb: AudioDataCallback) => () => void;
 }
 
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -23,10 +52,25 @@ const BluetoothContext = createContext<BluetoothContextType | undefined>(undefin
 const manager = new BleManager();
 
 export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // ── BLE state (text TX path, unchanged behaviour) ──────────────────────────
   const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Classic BT state (audio RX path) ───────────────────────────────────────
+  const [pairedAudioDevices, setPairedAudioDevices] = useState<ClassicDevice[]>([]);
+  const [audioDevice, setAudioDevice] = useState<ClassicDevice | null>(null);
+  const [isAudioStreaming, setIsAudioStreaming] = useState(false);
+
+  // The Pi writes one 44-byte WAV header then raw PCM16. Track how many header
+  // bytes remain to skip across chunk boundaries, plus any trailing odd byte
+  // we have to defer to the next chunk to keep int16 alignment.
+  const headerRemainingRef = useRef(AUDIO_WAV_HEADER_BYTES);
+  const oddByteRef = useRef<number | null>(null);
+  const audioSubscribersRef = useRef<Set<AudioDataCallback>>(new Set());
+  const dataSubscriptionRef = useRef<BluetoothEventSubscription | null>(null);
+  const disconnectSubscriptionRef = useRef<BluetoothEventSubscription | null>(null);
 
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
@@ -37,16 +81,15 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       if (Platform.Version >= 31) {
-        const bluetoothScanPermission = await PermissionsAndroid.request(
+        const scanPerm = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN
         );
-        const bluetoothConnectPermission = await PermissionsAndroid.request(
+        const connectPerm = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
         );
-
         if (
-          bluetoothScanPermission !== PermissionsAndroid.RESULTS.GRANTED ||
-          bluetoothConnectPermission !== PermissionsAndroid.RESULTS.GRANTED
+          scanPerm !== PermissionsAndroid.RESULTS.GRANTED ||
+          connectPerm !== PermissionsAndroid.RESULTS.GRANTED
         ) {
           setError('Bluetooth permissions required');
           return false;
@@ -64,19 +107,16 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setDevices([]);
     setError(null);
 
-    manager.startDeviceScan(null, null, (error, device) => {
-      if (error) {
-        console.error('Scan error:', error);
-        setError(error.message);
+    manager.startDeviceScan(null, null, (scanError, device) => {
+      if (scanError) {
+        console.error('Scan error:', scanError);
+        setError(scanError.message);
         setIsScanning(false);
         return;
       }
 
       if (device && device.name) {
-        setDevices((prevDevices) => {
-          if (prevDevices.find((d) => d.id === device.id)) return prevDevices;
-          return [...prevDevices, device];
-        });
+        setDevices((prev) => (prev.find((d) => d.id === device.id) ? prev : [...prev, device]));
       }
     });
 
@@ -90,7 +130,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       manager.stopDeviceScan();
       setIsScanning(false);
-      
+
       const connected = await device.connect();
       const discovered = await connected.discoverAllServicesAndCharacteristics();
       setConnectedDevice(discovered);
@@ -126,17 +166,176 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  // ── Classic BT — audio reception ───────────────────────────────────────────
+
+  const refreshPairedAudioDevices = useCallback(async () => {
+    try {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) return;
+
+      const enabled = await RNBluetoothClassic.isBluetoothEnabled();
+      if (!enabled) {
+        try {
+          await RNBluetoothClassic.requestBluetoothEnabled();
+        } catch {
+          setError('Enable Bluetooth to receive audio');
+          return;
+        }
+      }
+
+      const bonded = await RNBluetoothClassic.getBondedDevices();
+      setPairedAudioDevices(bonded);
+    } catch (e: any) {
+      console.error('Refresh paired devices error:', e);
+      setError(e.message);
+    }
+  }, []);
+
+  const resetAudioStreamState = () => {
+    headerRemainingRef.current = AUDIO_WAV_HEADER_BYTES;
+    oddByteRef.current = null;
+  };
+
+  // Convert an incoming chunk of ISO-8859-1-decoded bytes into PCM16 samples
+  // and fan them out to subscribers. Handles header skipping and the case
+  // where the chunk length is odd (one byte gets carried to the next call).
+  const handleIncomingBytes = (raw: Buffer) => {
+    let offset = 0;
+
+    if (headerRemainingRef.current > 0) {
+      const skip = Math.min(headerRemainingRef.current, raw.length);
+      headerRemainingRef.current -= skip;
+      offset = skip;
+      if (offset >= raw.length) return;
+    }
+
+    let work: Buffer;
+    if (oddByteRef.current !== null) {
+      work = Buffer.concat([Buffer.from([oddByteRef.current]), raw.subarray(offset)]);
+      oddByteRef.current = null;
+    } else {
+      work = raw.subarray(offset);
+    }
+
+    if (work.length % 2 === 1) {
+      oddByteRef.current = work[work.length - 1];
+      work = work.subarray(0, work.length - 1);
+    }
+    if (work.length === 0) return;
+
+    // Copy into a fresh ArrayBuffer so Int16Array is 2-byte aligned —
+    // Buffer slices may not be.
+    const aligned = new ArrayBuffer(work.length);
+    new Uint8Array(aligned).set(work);
+    const pcm16 = new Int16Array(aligned);
+
+    audioSubscribersRef.current.forEach((cb) => {
+      try {
+        cb(pcm16);
+      } catch (cbErr) {
+        console.error('Audio subscriber error:', cbErr);
+      }
+    });
+  };
+
+  const connectAudioDevice = useCallback(async (device: ClassicDevice) => {
+    try {
+      resetAudioStreamState();
+
+      // ISO-8859-1 maps every byte 1:1 to a JS code point, so binary data
+      // survives the plugin's string decoding intact.
+      const connected = await device.connect({
+        DELIMITER: '\n',
+        DEVICE_CHARSET: 'ISO-8859-1',
+      } as any);
+
+      if (!connected) {
+        setError('Failed to open audio device');
+        return false;
+      }
+
+      dataSubscriptionRef.current = device.onDataReceived((evt) => {
+        const data = evt?.data as unknown as string | undefined;
+        if (!data || data.length === 0) return;
+        const buf = Buffer.alloc(data.length);
+        for (let i = 0; i < data.length; i++) buf[i] = data.charCodeAt(i) & 0xff;
+        handleIncomingBytes(buf);
+      });
+
+      disconnectSubscriptionRef.current = RNBluetoothClassic.onDeviceDisconnected(() => {
+        setAudioDevice(null);
+        setIsAudioStreaming(false);
+        resetAudioStreamState();
+        dataSubscriptionRef.current?.remove();
+        dataSubscriptionRef.current = null;
+      });
+
+      setAudioDevice(device);
+      setIsAudioStreaming(true);
+      setError(null);
+      return true;
+    } catch (e: any) {
+      console.error('Audio connect error:', e);
+      setError(e.message);
+      return false;
+    }
+  }, []);
+
+  const disconnectAudio = useCallback(async () => {
+    try {
+      dataSubscriptionRef.current?.remove();
+      disconnectSubscriptionRef.current?.remove();
+      dataSubscriptionRef.current = null;
+      disconnectSubscriptionRef.current = null;
+      if (audioDevice) {
+        try {
+          await audioDevice.disconnect();
+        } catch {
+          // ignore — device may already be gone
+        }
+      }
+    } finally {
+      setAudioDevice(null);
+      setIsAudioStreaming(false);
+      resetAudioStreamState();
+    }
+  }, [audioDevice]);
+
+  const onAudioData = useCallback((cb: AudioDataCallback) => {
+    audioSubscribersRef.current.add(cb);
+    return () => {
+      audioSubscribersRef.current.delete(cb);
+    };
+  }, []);
+
+  useEffect(
+    () => () => {
+      dataSubscriptionRef.current?.remove();
+      disconnectSubscriptionRef.current?.remove();
+    },
+    []
+  );
+
   return (
-    <BluetoothContext.Provider value={{
-      isScanning,
-      devices,
-      connectedDevice,
-      error,
-      scanDevices,
-      connectToDevice,
-      disconnect,
-      sendData
-    }}>
+    <BluetoothContext.Provider
+      value={{
+        isScanning,
+        devices,
+        connectedDevice,
+        error,
+        scanDevices,
+        connectToDevice,
+        disconnect,
+        sendData,
+        pairedAudioDevices,
+        audioDevice,
+        isAudioStreaming,
+        refreshPairedAudioDevices,
+        connectAudioDevice,
+        disconnectAudio,
+        onAudioData,
+      }}
+    >
       {children}
     </BluetoothContext.Provider>
   );
