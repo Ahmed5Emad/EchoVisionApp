@@ -43,9 +43,17 @@ type Mode = 'brightness' | 'font';
 
 export default function Settings() {
   const router = useRouter();
-  const { sendData } = useBluetooth();
-  const { 
-    downloadState, downloadModel, pauseDownload, resumeDownload, cancelDownload, downloadedModels, deleteModel: deleteModelFromStore 
+  const {
+    sendData,
+    pairedAudioDevices,
+    audioDevice,
+    isAudioStreaming,
+    refreshPairedAudioDevices,
+    connectAudioDevice,
+    disconnectAudio,
+  } = useBluetooth();
+  const {
+    downloadState, downloadModel, pauseDownload, resumeDownload, cancelDownload, downloadedModels, deleteModel: deleteModelFromStore
   } = useDownload();
   
   const [selectedLanguage, setSelectedLanguage] = useState('en');
@@ -68,7 +76,20 @@ export default function Settings() {
   const minVal = isBrightness ? 0 : 12;
   const maxVal = isBrightness ? 100 : 40;
 
-  useEffect(() => { loadSettings(); }, []);
+  useEffect(() => {
+    loadSettings();
+    refreshPairedAudioDevices();
+  }, []);
+
+  const handleConnectAudio = async (device: any) => {
+    const ok = await connectAudioDevice(device);
+    if (!ok) {
+      Alert.alert(
+        'Audio Device',
+        'Failed to connect. Make sure the glasses are paired in Android Bluetooth settings first.'
+      );
+    }
+  };
 
   useEffect(() => {
     const family = MODEL_FAMILIES.find(f => f.id === selFamily);
@@ -134,6 +155,59 @@ export default function Settings() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
+        {/* --- Audio Receiver Section --- */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>AUDIO RECEIVER (GLASSES)</Text>
+          <View style={styles.card}>
+            <View style={styles.audioStatusRow}>
+              <View style={styles.audioStatusInfo}>
+                <View
+                  style={[
+                    styles.audioStatusDot,
+                    { backgroundColor: isAudioStreaming ? '#34C759' : '#FF3B30' },
+                  ]}
+                />
+                <Text style={styles.audioStatusText} numberOfLines={1}>
+                  {audioDevice
+                    ? audioDevice.name || audioDevice.address
+                    : 'No audio device connected'}
+                </Text>
+              </View>
+              {audioDevice ? (
+                <Pressable onPress={disconnectAudio} style={styles.audioTextButton}>
+                  <Text style={styles.audioDisconnectText}>Disconnect</Text>
+                </Pressable>
+              ) : (
+                <Pressable onPress={refreshPairedAudioDevices} style={styles.audioRefreshButton}>
+                  <Text style={styles.audioRefreshButtonText}>Refresh</Text>
+                </Pressable>
+              )}
+            </View>
+
+            {!audioDevice && pairedAudioDevices.length > 0 && (
+              <View style={styles.audioDeviceList}>
+                <Text style={styles.subLabel}>Paired devices</Text>
+                {pairedAudioDevices.map((d) => (
+                  <Pressable
+                    key={d.address}
+                    style={styles.audioDeviceItem}
+                    onPress={() => handleConnectAudio(d)}
+                  >
+                    <Text style={styles.audioDeviceName}>{d.name || d.address}</Text>
+                    <View style={styles.audioConnectChevron} />
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {!audioDevice && pairedAudioDevices.length === 0 && (
+              <Text style={styles.audioHelperText}>
+                Pair "SmartGlassesAudio" in Android Bluetooth settings, then tap Refresh.
+              </Text>
+            )}
+          </View>
+        </View>
 
         {/* --- Screen Control Section --- */}
         <View style={styles.section}>
@@ -385,4 +459,17 @@ const styles = StyleSheet.create({
   deleteButton: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF1F0' },
   emptyText: { textAlign: 'center', color: "#8E8E93", fontSize: 14, fontWeight: "500" },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  audioStatusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  audioStatusInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
+  audioStatusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
+  audioStatusText: { fontSize: 15, color: '#1A1A1A', fontWeight: '600', flex: 1 },
+  audioTextButton: { paddingVertical: 8, paddingHorizontal: 12 },
+  audioDisconnectText: { color: '#FF3B30', fontWeight: '700', fontSize: 14 },
+  audioRefreshButton: { backgroundColor: '#007AFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, minWidth: 80, alignItems: 'center' },
+  audioRefreshButtonText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
+  audioDeviceList: { marginTop: 14, gap: 8 },
+  audioDeviceItem: { backgroundColor: '#F2F2F7', padding: 14, borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  audioDeviceName: { fontSize: 15, color: '#1A1A1A', fontWeight: '500' },
+  audioConnectChevron: { width: 8, height: 8, borderTopWidth: 2, borderRightWidth: 2, borderColor: '#C7C7CC', transform: [{ rotate: '45deg' }] },
+  audioHelperText: { marginTop: 12, fontSize: 13, color: '#8E8E93', fontWeight: '500', lineHeight: 18 },
 });
